@@ -10,7 +10,7 @@ Docker, no PostgreSQL, no model, no network, and no licence from us (the BUSL's
 Additional Use Grant states that verification is not Production Use).
 
 ```bash
-git clone https://github.com/EctoSpace/EctoLedger.git IronVise
+git clone https://github.com/EctoSpace/IronVise.git IronVise
 cd IronVise
 cargo build --release --bin verify-cert
 
@@ -51,7 +51,7 @@ Release builds of the Linux CLI, `.deb`, and `.AppImage` are made on Ubuntu 22.0
 
 **macOS / Linux:**
 ```bash
-git clone https://github.com/EctoSpace/EctoLedger.git IronVise
+git clone https://github.com/EctoSpace/IronVise.git IronVise
 cd IronVise
 make setup     # builds the CLI binary, installs GUI deps, creates .env
 make start     # opens the desktop GUI
@@ -59,7 +59,7 @@ make start     # opens the desktop GUI
 
 **Windows (PowerShell):**
 ```powershell
-git clone https://github.com/EctoSpace/EctoLedger.git IronVise
+git clone https://github.com/EctoSpace/IronVise.git IronVise
 cd IronVise
 .\ironvise-win.ps1
 ```

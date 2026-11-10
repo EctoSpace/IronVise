@@ -1,7 +1,7 @@
 {
   "name": "ironvise",
   "version": "0.8.0",
-  "homepage": "https://ectospace.com/EctoLedger",
+  "homepage": "https://ectospace.com/IronVise",
   "description": "AI firewall and hash-chained, signed audit trail for AI agents. TypeScript SDK for IronVise.",
   "license": "Apache-2.0",
   "author": "Björn Roman Kohlberger <ironvise@ectospace.com>",
@@ -42,11 +42,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/EctoSpace/EctoLedger.git",
+    "url": "git+https://github.com/EctoSpace/IronVise.git",
     "directory": "sdk/typescript"
   },
   "bugs": {
-    "url": "https://github.com/EctoSpace/EctoLedger/issues"
+    "url": "https://github.com/EctoSpace/IronVise/issues"
   },
   "keywords": [
     "ironvise",

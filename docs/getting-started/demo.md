@@ -121,7 +121,7 @@ If you prefer a fully containerized experience, you can run the IronVise demo us
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/EctoSpace/EctoLedger.git IronVise
+   git clone https://github.com/EctoSpace/IronVise.git IronVise
    cd IronVise
    ```
 2. **Start the demo stack:**

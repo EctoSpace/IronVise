@@ -67,8 +67,8 @@ RUN set -eu; \
 FROM scratch
 COPY --from=runtime / /
 
-LABEL org.opencontainers.image.source="https://github.com/EctoSpace/EctoLedger"
-LABEL org.opencontainers.image.url="https://ectospace.com/EctoLedger"
+LABEL org.opencontainers.image.source="https://github.com/EctoSpace/IronVise"
+LABEL org.opencontainers.image.url="https://ectospace.com/IronVise"
 LABEL org.opencontainers.image.description="IronVise - Cryptographic accountability for AI agents"
 # BUSL-1.1, matching the workspace and the root LICENSE. The SDKs under sdk/
 # are separately Apache-2.0 and are not in this image.

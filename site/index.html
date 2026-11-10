@@ -167,7 +167,7 @@
         </nav>
         <div class="flex items-center gap-2">
           <a
-            href="https://github.com/EctoSpace/EctoLedger"
+            href="https://github.com/EctoSpace/IronVise"
             class="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-white transition hover:border-brand-300/60 hover:bg-brand-500/15"
           >
             View GitHub
@@ -234,7 +234,7 @@
               </p>
               <div class="reveal mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
                 <a
-                  href="https://github.com/EctoSpace/EctoLedger#quick-start"
+                  href="https://github.com/EctoSpace/IronVise#quick-start"
                   class="rounded-full bg-white px-8 py-3.5 font-display text-sm font-semibold uppercase tracking-[0.14em] text-ink-950 transition hover:bg-zinc-200"
                 >
                   Get Started
@@ -683,7 +683,7 @@
               <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Fail-closed sandboxing</strong> - A sandbox that cannot be applied now aborts the action instead of silently degrading it; <code class="font-mono text-xs">ECTO_SANDBOX_PERMISSIVE</code> opts back out.</div>
               <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Symlink TOCTOU defence</strong> - <code class="font-mono text-xs">read_file</code> refuses to follow a leaf swapped for a symlink between validation and open, with regression tests for the race window.</div>
               <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Canonical v2 hashing</strong> - All write paths share one byte layout; pre-v0.8 ledgers still verify through the v1 fallback.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Demo mode labelled insecure</strong> - The demo stack names every weakening it applies and logs a startup warning; <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/getting-started/running-securely.md" class="text-aqua-300 hover:text-aqua-200 underline">running securely</a> covers the hardened path.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Demo mode labelled insecure</strong> - The demo stack names every weakening it applies and logs a startup warning; <a href="https://github.com/EctoSpace/IronVise/blob/main/docs/getting-started/running-securely.md" class="text-aqua-300 hover:text-aqua-200 underline">running securely</a> covers the hardened path.</div>
               <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Safer embedded PostgreSQL</strong> - Startup no longer SIGKILLs whatever holds port 5432; only instances it owns are reclaimed.</div>
               <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Working fresh clone</strong> - <code class="font-mono text-xs">make start</code>, <code class="font-mono text-xs">make demo</code>, and the Docker demo all verified from a clean checkout.</div>
             </div>
@@ -711,7 +711,7 @@
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Developers</p>
             <h2 class="mt-4 font-display text-3xl tracking-tight sm:text-5xl">Quick start, SDKs, and CLI</h2>
             <p class="mt-4 max-w-2xl mx-auto text-sm text-zinc-300">
-              Zero-friction setup: <code class="font-mono text-xs rounded bg-white/10 px-1">make</code> targets on macOS/Linux, a PowerShell launcher on Windows, a Docker demo, or SQLite for local dev. Full docs on <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="text-aqua-300 hover:text-aqua-200 underline">GitHub</a>.
+              Zero-friction setup: <code class="font-mono text-xs rounded bg-white/10 px-1">make</code> targets on macOS/Linux, a PowerShell launcher on Windows, a Docker demo, or SQLite for local dev. Full docs on <a href="https://github.com/EctoSpace/IronVise#quick-start" class="text-aqua-300 hover:text-aqua-200 underline">GitHub</a>.
             </p>
           </div>
 
@@ -725,7 +725,7 @@
                 <li><strong class="text-white">Windows:</strong> <code class="font-mono text-xs">.\ironvise-win.ps1</code></li>
                 <li><strong class="text-white">Docker:</strong> <code class="font-mono text-xs">docker compose -f docker-compose.demo.yml up</code></li>
               </ul>
-              <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">Quick Start on GitHub →</a>
+              <a href="https://github.com/EctoSpace/IronVise#quick-start" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">Quick Start on GitHub →</a>
             </div>
 
             <div class="reveal glass rounded-3xl p-6 sm:p-8">
@@ -741,13 +741,13 @@
                 <li><code>red-team --target-session &lt;id&gt;</code> - Adversarial testing</li>
                 <li><code>prove-audit &lt;id&gt;</code> - unavailable in 0.8; use certificate export</li>
               </ul>
-              <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/guides/cli.md" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">CLI reference →</a>
+              <a href="https://github.com/EctoSpace/IronVise/blob/main/docs/guides/cli.md" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">CLI reference →</a>
             </div>
           </div>
 
           <div class="reveal mt-8 glass rounded-3xl p-6 sm:p-8">
             <h3 class="font-display text-xl text-white">Python SDK</h3>
-            <p class="mt-2 text-sm text-zinc-300">From a clone: <code class="font-mono text-xs">pip install ./sdk/python</code> installs the <code class="font-mono text-xs">ironvise</code> package. Optional extras: <code class="font-mono text-xs">[langchain]</code> or <code class="font-mono text-xs">[autogen]</code>. <a href="https://github.com/EctoSpace/EctoLedger/tree/main/sdk/python" class="text-aqua-300 hover:text-aqua-200">sdk/python</a></p>
+            <p class="mt-2 text-sm text-zinc-300"><code class="font-mono text-xs">pip install ironvise</code> installs the Python SDK. Optional extras: <code class="font-mono text-xs">[langchain]</code> or <code class="font-mono text-xs">[autogen]</code>. <a href="https://github.com/EctoSpace/IronVise/tree/main/sdk/python" class="text-aqua-300 hover:text-aqua-200">sdk/python</a></p>
             <div class="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-ink-950/85">
               <div class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
                 <span class="h-2.5 w-2.5 rounded-full bg-red-400/70"></span>
@@ -770,7 +770,7 @@ asyncio.run(main())</code></pre>
 
           <div class="reveal mt-8 glass rounded-3xl p-6 sm:p-8">
             <h3 class="font-display text-xl text-white">TypeScript SDK</h3>
-            <p class="mt-2 text-sm text-zinc-300">Build from <code class="font-mono text-xs">sdk/typescript</code> with npm install and npm run build. Package: <code class="font-mono text-xs">ironvise</code> · Zero runtime deps, native fetch. <a href="https://github.com/EctoSpace/EctoLedger/tree/main/sdk/typescript" class="text-aqua-300 hover:text-aqua-200">sdk/typescript</a></p>
+            <p class="mt-2 text-sm text-zinc-300"><code class="font-mono text-xs">npm install ironvise</code> installs the TypeScript SDK. Zero runtime deps, native fetch. <a href="https://github.com/EctoSpace/IronVise/tree/main/sdk/typescript" class="text-aqua-300 hover:text-aqua-200">sdk/typescript</a></p>
             <pre class="mt-4 p-4 rounded-2xl border border-white/10 bg-ink-950/85 font-mono text-xs leading-relaxed text-zinc-200 overflow-x-auto"><code>import { IronViseClient } from "ironvise";
 const client = new IronViseClient({ baseUrl: "http://localhost:3000", bearerToken: "&lt;token&gt;" });
 const session = await client.createSession({ goal: "Summarise quarterly report", record: true });

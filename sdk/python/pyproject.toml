@@ -45,10 +45,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage      = "https://ectospace.com/EctoLedger"
-GitHub        = "https://github.com/EctoSpace/EctoLedger"
-Issues        = "https://github.com/EctoSpace/EctoLedger/issues"
-Documentation = "https://github.com/EctoSpace/EctoLedger/tree/main/sdk/python"
+Homepage      = "https://ectospace.com/IronVise"
+GitHub        = "https://github.com/EctoSpace/IronVise"
+Issues        = "https://github.com/EctoSpace/IronVise/issues"
+Documentation = "https://github.com/EctoSpace/IronVise/tree/main/sdk/python"
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]

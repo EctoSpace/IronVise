@@ -120,7 +120,7 @@ IronVise names; the former executable and SDK import aliases are removed. See [d
 - W3C Verifiable Credentials and an ISO/IEC 42001 policy pack.
 - Signed webhooks, agent signing-key rotation, and a zero-config demo launcher.
 
-[Unreleased]: https://github.com/EctoSpace/EctoLedger/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/EctoSpace/EctoLedger/compare/v0.6.3...v0.8.0
-[0.6.3]: https://github.com/EctoSpace/EctoLedger/releases/tag/v0.6.3
-[0.6.2]: https://github.com/EctoSpace/EctoLedger/releases/tag/v0.6.2
+[Unreleased]: https://github.com/EctoSpace/IronVise/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/EctoSpace/IronVise/compare/v0.6.3...v0.8.0
+[0.6.3]: https://github.com/EctoSpace/IronVise/releases/tag/v0.6.3
+[0.6.2]: https://github.com/EctoSpace/IronVise/releases/tag/v0.6.2

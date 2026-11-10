@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/EctoSpace/EctoLedger/blob/main/SECURITY.md
+    url: https://github.com/EctoSpace/IronVise/blob/main/SECURITY.md
     about: Do not open a public issue. SECURITY.md has the reporting address.
   - name: What each integration can and cannot stop
-    url: https://github.com/EctoSpace/EctoLedger/blob/main/docs/guides/integrations.md
+    url: https://github.com/EctoSpace/IronVise/blob/main/docs/guides/integrations.md
     about: The coverage matrix - recording and preventing are different things.
   - name: Known limits and documented bypasses
-    url: https://github.com/EctoSpace/EctoLedger/blob/main/docs/reference/threat-model.md
+    url: https://github.com/EctoSpace/IronVise/blob/main/docs/reference/threat-model.md
     about: What the guards are known not to catch. Check before filing.

@@ -28,15 +28,7 @@ When replacing an installed `ectoledger-sdk` distribution, uninstall it before
 installing `ironvise` (`python -m pip uninstall ectoledger-sdk`). This does not
 remove ledger data or signing keys.
 
-The package is not on PyPI yet. Install it from a checkout:
-
-```bash
-pip install ./sdk/python
-# Development install, including framework adapters and test dependencies:
-pip install -e './sdk/python[dev]'
-```
-
-After the release is published, its distribution name is `ironvise`:
+Install the `ironvise` package from PyPI:
 
 ```bash
 pip install "ironvise>=0.8.0"
@@ -47,6 +39,8 @@ pip install "ironvise[autogen]>=0.8.0"
 
 # Or from a clone of this repository
 pip install -e ./sdk/python
+# Development install, including framework adapters and test dependencies:
+pip install -e './sdk/python[dev]'
 ```
 
 Use 0.8.0 or newer. Earlier releases (0.6.x) predate `verify_intent`, the

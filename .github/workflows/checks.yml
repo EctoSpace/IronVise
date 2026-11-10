@@ -26,7 +26,7 @@ jobs:
   check:
     name: fmt + clippy + test (ubuntu)
     # Automatic runs only on the public repo; manual dispatch works anywhere.
-    if: github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'EctoSpace/IronVise' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

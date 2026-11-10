@@ -8,8 +8,8 @@ import pytest
 
 pytest.importorskip("yaml")
 
-GUARD = "github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch'"
-GUARD_REVERSED = "github.event_name == 'workflow_dispatch' || github.repository == 'EctoSpace/EctoLedger'"
+GUARD = "github.repository == 'EctoSpace/IronVise' || github.event_name == 'workflow_dispatch'"
+GUARD_REVERSED = "github.event_name == 'workflow_dispatch' || github.repository == 'EctoSpace/IronVise'"
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def test_folded_multiline_guard_is_accepted(repo):
         "  build:\n"
         "    runs-on: ubuntu-latest\n"
         "    if: >-\n"
-        "      github.repository == 'EctoSpace/EctoLedger' ||\n"
+        "      github.repository == 'EctoSpace/IronVise' ||\n"
         "      github.event_name == 'workflow_dispatch'\n"
         "    steps:\n"
         "      - run: echo hi\n"
@@ -234,14 +234,14 @@ def test_violations_in_one_file_fail_the_whole_run(repo):
     [
         (
             "github.repository == 'Someone/EctoLedger' || github.event_name == 'workflow_dispatch'",
-            "wrong repository string; expected github.repository == 'EctoSpace/EctoLedger'",
+            "wrong repository string; expected github.repository == 'EctoSpace/IronVise'",
         ),
         (
             "github.event_name == 'workflow_dispatch'",
             "guard has no repository check",
         ),
         (
-            "github.repository == 'EctoSpace/EctoLedger'",
+            "github.repository == 'EctoSpace/IronVise'",
             "guard has no workflow_dispatch escape",
         ),
         (

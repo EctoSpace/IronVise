@@ -24,7 +24,17 @@ open an issue, because that is the signal that would change the decision.
 
 ## Installation
 
-The package is not on npm yet. Build the single `ironvise` package from a clone:
+Install the `ironvise` package from npm:
+
+```bash
+npm install ironvise@^0.8.0
+```
+
+The former `ectoledger-sdk` package and `EctoLedgerClient` API aliases are
+not included. Update imports and use `IronViseClient`, `IronViseApiError` and
+`IronViseUsageError`.
+
+To build from a clone:
 
 ```bash
 cd sdk/typescript
@@ -33,10 +43,6 @@ npm run build
 # From your application directory:
 npm install /absolute/path/to/IronVise/sdk/typescript
 ```
-
-After publication, install `ironvise@^0.8.0`. The former `ectoledger-sdk`
-package and `EctoLedgerClient` API aliases are not included. Update imports
-and use `IronViseClient`, `IronViseApiError` and `IronViseUsageError`.
 
 Use 0.8.0 or newer. Earlier releases (0.6.x) predate `verifyIntent`, the call
 that lets the SDK ask permission before an action instead of only recording it.

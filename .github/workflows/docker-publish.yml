@@ -36,7 +36,7 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     # Automatic tag builds only on the public repo; manual dispatch works anywhere.
-    if: github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'EctoSpace/IronVise' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     # A full Rust image build; cap it so a hung build cannot run to the 6-hour
     # default. Every other job in this repository carries a timeout.
@@ -68,8 +68,8 @@ jobs:
           # Default source label is the checkout's git URL. Pin the public
           # repository so a dispatch from another checkout cannot publish it.
           labels: |
-            org.opencontainers.image.source=https://github.com/EctoSpace/EctoLedger
-            org.opencontainers.image.url=https://ectospace.com/EctoLedger
+            org.opencontainers.image.source=https://github.com/EctoSpace/IronVise
+            org.opencontainers.image.url=https://ectospace.com/IronVise
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -135,7 +135,7 @@ jobs:
     # real tagged manifest in GHCR, so in rehearsal mode there is nothing for it
     # to do and it is skipped entirely.
     if: >-
-      (github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch')
+      (github.repository == 'EctoSpace/IronVise' || github.event_name == 'workflow_dispatch')
       && inputs.publish_image
     runs-on: ubuntu-latest
     needs: build

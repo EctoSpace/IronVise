@@ -217,7 +217,7 @@
     </p>
     <p>
       The certificate is the "Forged" sample above. The ledgers are SQLite files: get them from
-      <a href="https://github.com/EctoSpace/EctoLedger/tree/main/examples/challenge">examples/challenge</a>
+      <a href="https://github.com/EctoSpace/IronVise/tree/main/examples/challenge">examples/challenge</a>
       and check them with:
     </p>
     <pre class="cmd">for f in ledger-*.sqlite; do
@@ -240,7 +240,7 @@ ledger-5-certificate.elc:merkle-root-mismatch</pre>
     <p style="color:var(--muted);font-size:14px">
       This only compares a SHA-256 hash. It is a self-check, not a secret: the answer can be brute-forced, and the
       generator script states it. Found a tamper the tools miss? That is the real prize.
-      <a href="https://github.com/EctoSpace/EctoLedger/issues/new">Open an issue</a>.
+      <a href="https://github.com/EctoSpace/IronVise/issues/new">Open an issue</a>.
     </p>
 
     <h2>Check this page</h2>
@@ -258,9 +258,9 @@ ledger-5-certificate.elc:merkle-root-mismatch</pre>
     <pre class="cmd">verify-cert --expected-key &lt;issuer key&gt; audit.elc</pre>
     <p>
       To rebuild the module: <span class="mono">make wasm-verifier</span>. The format is specified in
-      <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/reference/elc-spec.md">docs/reference/elc-spec.md</a>, and a second
+      <a href="https://github.com/EctoSpace/IronVise/blob/main/docs/reference/elc-spec.md">docs/reference/elc-spec.md</a>, and a second
       verifier written from that spec alone, in Python, is in
-      <a href="https://github.com/EctoSpace/EctoLedger/tree/main/examples/verified-session">examples/verified-session</a>.
+      <a href="https://github.com/EctoSpace/IronVise/tree/main/examples/verified-session">examples/verified-session</a>.
     </p>
   </main>
 

@@ -6,13 +6,13 @@ scripts and SDK imports as described in
 [upgrade and naming compatibility](docs/reference/compatibility.md).
 
 
-[![Checks](https://github.com/EctoSpace/EctoLedger/actions/workflows/checks.yml/badge.svg)](https://github.com/EctoSpace/EctoLedger/actions/workflows/checks.yml)
-[![CI](https://github.com/EctoSpace/EctoLedger/actions/workflows/ci.yml/badge.svg)](https://github.com/EctoSpace/EctoLedger/actions/workflows/ci.yml)
+[![Checks](https://github.com/EctoSpace/IronVise/actions/workflows/checks.yml/badge.svg)](https://github.com/EctoSpace/IronVise/actions/workflows/checks.yml)
+[![CI](https://github.com/EctoSpace/IronVise/actions/workflows/ci.yml/badge.svg)](https://github.com/EctoSpace/IronVise/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.8.0-orange.svg)](Cargo.toml)
 [![Rust](https://img.shields.io/badge/rust-1.94%2B%20%7C%20edition%202024-orange.svg)](https://www.rust-lang.org)
-[![GitHub issues](https://img.shields.io/github/issues/EctoSpace/EctoLedger.svg)](https://github.com/EctoSpace/EctoLedger/issues)
-[![Last commit](https://img.shields.io/github/last-commit/EctoSpace/EctoLedger.svg)](https://github.com/EctoSpace/EctoLedger/commits/main)
+[![GitHub issues](https://img.shields.io/github/issues/EctoSpace/IronVise.svg)](https://github.com/EctoSpace/IronVise/issues)
+[![Last commit](https://img.shields.io/github/last-commit/EctoSpace/IronVise.svg)](https://github.com/EctoSpace/IronVise/commits/main)
 
 <p align="center">
   <img src="assets/ironvise-logo.webp" alt="IronVise Logo" width="250" />
@@ -55,7 +55,7 @@ bypasses it is written down in [docs/reference/threat-model.md](docs/reference/t
 ## Try it
 
 **In your browser, nothing to install.** Open
-[ectospace.com/EctoLedger/verify.html](https://ectospace.com/EctoLedger/verify.html),
+[ectospace.com/IronVise/verify.html](https://ectospace.com/IronVise/verify.html),
 click a sample certificate, then the one with a single character changed. The
 verifier is the same Rust code compiled to WebAssembly; nothing is uploaded.
 
@@ -71,7 +71,7 @@ Startup logs `WARN INSECURE DEMO MODE` while any of that is true. Do not expose
 that process beyond your own machine.
 
 ```bash
-git clone https://github.com/EctoSpace/EctoLedger.git IronVise && cd IronVise
+git clone https://github.com/EctoSpace/IronVise.git IronVise && cd IronVise
 docker compose -f docker-compose.demo.yml up
 # open http://localhost:3000
 ```
@@ -89,7 +89,7 @@ is [docs/getting-started/running-securely.md](docs/getting-started/running-secur
 **From source** (Rust 1.94+), watch it refuse a command:
 
 ```bash
-git clone https://github.com/EctoSpace/EctoLedger.git IronVise && cd IronVise
+git clone https://github.com/EctoSpace/IronVise.git IronVise && cd IronVise
 make demo-hook
 ```
 
@@ -110,11 +110,11 @@ ships five ledgers, two genuine, and asks you to say which.
 
 | You want | Get it |
 |---|---|
-| Desktop app (macOS, Windows, Linux) | Installers on the [Releases page](https://github.com/EctoSpace/EctoLedger/releases) (`.dmg`, `.msi` / `.exe`, `.AppImage` / `.deb`), or `make start` from a clone |
-| CLI and server (`ironvise`, `verify-cert`, `guard-worker`) | Archives on the [Releases page](https://github.com/EctoSpace/EctoLedger/releases), or `cargo build --release -p ectoledger` |
+| Desktop app (macOS, Windows, Linux) | Installers on the [Releases page](https://github.com/EctoSpace/IronVise/releases) (`.dmg`, `.msi` / `.exe`, `.AppImage` / `.deb`), or `make start` from a clone |
+| CLI and server (`ironvise`, `verify-cert`, `guard-worker`) | Archives on the [Releases page](https://github.com/EctoSpace/IronVise/releases), or `cargo build --release -p ectoledger` |
 | Docker image | `docker pull ghcr.io/ectospace/ironvise:0.8.0` |
-| Python SDK (LangChain and AutoGen adapters) | `pip install ./sdk/python` ([sdk/python](sdk/python/README.md)) |
-| TypeScript / JavaScript SDK | Build from source ([sdk/typescript](sdk/typescript/README.md)) |
+| Python SDK (LangChain and AutoGen adapters) | `pip install ironvise` ([sdk/python](sdk/python/README.md)) |
+| TypeScript / JavaScript SDK | `npm install ironvise` ([sdk/typescript](sdk/typescript/README.md)) |
 | Windows, from a clone | `.\ironvise-win.ps1` (checks prerequisites, builds, starts the app) |
 
 The Windows `.msi` and `.exe` install the desktop app only. They do not add `ironvise` to PATH. The Windows command-line tools are the release zip `ironvise-x86_64-pc-windows-msvc.zip` (`ironvise.exe`, `guard-worker.exe`, `verify-cert.exe`). Unzip it and add that folder to PATH, or run the executables by path.

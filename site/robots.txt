@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ectospace.com/EctoLedger/sitemap.xml
+Sitemap: https://ectospace.com/IronVise/sitemap.xml

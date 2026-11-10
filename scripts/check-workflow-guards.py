@@ -7,14 +7,14 @@ The files in ``.github/workflows/`` live verbatim in the public repository and
 in any private mirror or fork:
 
     private mirror or fork       : any other repository          <- Actions may be billed
-    public                       : EctoSpace/EctoLedger          <- Actions are free
+    public                       : EctoSpace/IronVise          <- Actions are free
 
 Any workflow that can start without a human (push, pull_request, schedule, a
 ``v*`` tag, ...) would therefore run on a mirror or fork as well. To
 prevent that, **every job** in such a workflow must carry this exact job-level
 condition::
 
-    if: github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'EctoSpace/IronVise' || github.event_name == 'workflow_dispatch'
 
 which makes the job run automatically on the public repo, run on manual
 dispatch anywhere, and *skip* on any mirror or fork. A job skipped by an
@@ -53,7 +53,7 @@ except ImportError:  # pragma: no cover - environment problem, not a policy fail
     sys.exit(2)
 
 # The only repository on which automatic runs are free.
-PUBLIC_REPO = "EctoSpace/EctoLedger"
+PUBLIC_REPO = "EctoSpace/IronVise"
 
 # The one trigger that always involves a human pressing a button.
 MANUAL_TRIGGER = "workflow_dispatch"
