@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl-ReplayNormal",
+  "object": "chat.completion",
+  "created": 1761177600,
+  "model": "gpt-6-astra",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"action\":\"read_file\",\"params\":{\"path\":\"server_config.txt\"},\"justification\":\"Need to inspect server configuration for audit findings.\",\"reasoning\":\"The goal is to audit server_config.txt, so reading it is the first logical step.\"}",
+        "refusal": null
+      },
+      "finish_reason": "stop",
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 360,
+    "completion_tokens": 58,
+    "total_tokens": 418
+  }
+}

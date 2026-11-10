@@ -1,24 +1,32 @@
-//! `ectoledger audit` — run a security audit with the cognitive loop.
+//! `ironvise audit` - run a security audit with the cognitive loop.
 //!
-//! Extracts the ~300-line Audit arm from the monolithic `main.rs` match block
-//! and adds a proper supervision tree using `CancellationToken` for cooperative
+//! Uses a supervision tree built on `CancellationToken` for cooperative
 //! shutdown between the Axum observer server and the agent cognitive loop.
+//!
+//! `audit` accepts any `DatabasePool`. Multi-agent orchestration
+//! (`orchestrate`, `diff-audit`, `red-team`) still requires PostgreSQL.
 
 use crate::agent::{self, AgentError, AgentLoopConfig};
 use crate::config;
 use crate::guard::GuardExecutor;
 use crate::guard_process::GuardProcess;
-use crate::ledger::{self, AppendError};
-use crate::pool;
+use crate::ledger::AppendError;
+use crate::policy::PolicyEngine;
+use crate::pool::{self, DatabasePool};
 use crate::sandbox;
 use crate::schema::EventPayload;
 use crate::server;
 use crate::tripwire::Tripwire;
+use ed25519_dalek::SigningKey;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+type AuditResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Arguments for the `audit` subcommand, extracted from the CLI parser.
 pub struct AuditArgs {
@@ -29,10 +37,12 @@ pub struct AuditArgs {
     pub interactive: bool,
     /// Read key-encryption password from this file descriptor (Unix only).
     pub key_password_fd: Option<i32>,
-    /// Automatic anchoring interval in seconds (0 = disabled, TM-1e).
-    pub auto_anchor_interval: u64,
-    /// Target chain for auto-anchoring (`bitcoin` or `ethereum`).
-    pub auto_anchor_chain: String,
+}
+
+/// How the supervised audit ended, as far as cleanup is concerned.
+struct AuditEnding {
+    aborted: bool,
+    session_finished: bool,
 }
 
 /// Run a full security audit: start the Observer dashboard, spawn the guard,
@@ -48,10 +58,10 @@ pub struct AuditArgs {
 /// - **Cognitive loop error** → token cancelled → server shuts down gracefully
 /// - **Cognitive loop panic** → `JoinHandle` returns `Err` → token cancelled, session "panicked"
 pub async fn run(
-    pool: sqlx::PgPool,
+    pool: pool::DatabasePool,
     metrics: Arc<crate::metrics::Metrics>,
     args: AuditArgs,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> AuditResult<()> {
     let AuditArgs {
         prompt,
         policy,
@@ -59,102 +69,55 @@ pub async fn run(
         no_guard_confirmed,
         interactive,
         key_password_fd,
-        auto_anchor_interval,
-        auto_anchor_chain,
     } = args;
 
-    // Log auto-anchoring configuration if enabled.
-    if auto_anchor_interval > 0 {
-        tracing::info!(
-            "Auto-anchoring enabled: every {}s to {} (TM-1e)",
-            auto_anchor_interval,
-            auto_anchor_chain,
-        );
-    }
+    // Before the model or the ledger is touched: a guard that is required but
+    // not configured, or whose worker is missing, must fail here, or it would
+    // fail after the session was created, leaving it `running` with only its
+    // genesis event.
+    let guard = start_guard(no_guard, no_guard_confirmed)?;
 
-    if no_guard && !no_guard_confirmed {
-        return Err(
-            "⚠️  WARNING: You specified --no-guard. The Guard provides a separate process \
-             and model to validate actions.\n   Running without the Guard reduces security. \
-             If you really want to proceed, run with:\n   \
-             cargo run -- audit \"<your goal>\" --no-guard --no-guard-confirmed"
-                .into(),
-        );
-    }
-
-    // ── LLM backend ───────────────────────────────────────────────────────────
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(
+            crate::config::llm_timeout_secs(),
+        ))
         .build()?;
     let llm_backend = crate::llm::backend_from_env(&client)?;
     llm_backend.ensure_ready(&client).await?;
 
-    // ── Policy engine ─────────────────────────────────────────────────────────
-    let (policy_engine, policy_hash) = if let Some(ref policy_path) = policy {
-        let content = std::fs::read(policy_path).map_err(|e| {
-            tracing::error!("Failed to read policy file: {}", e);
-            e
-        })?;
-        let hash = crate::policy::policy_hash_bytes(&content);
-        let engine = crate::policy::load_policy_engine(policy_path).map_err(|e| {
-            tracing::error!("Failed to load policy: {}", e);
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-        })?;
-        (Some(engine), Some(hash))
-    } else {
-        (None, None)
+    let (policy_engine, policy_hash) = match policy.as_deref() {
+        Some(path) => {
+            let (engine, hash) = load_enforceable_policy(path)?;
+            (Some(engine), Some(hash))
+        }
+        None => (None, None),
     };
 
-    // One-time startup recovery: clean up zombies from prior server runs.
     // Must run before session creation to avoid TOCTOU with recovered sessions.
-    if let Err(e) = crate::wakeup::recover_zombie_sessions(&pool).await {
-        tracing::warn!("audit startup: failed to recover zombie sessions: {e}");
-    }
-    if let Err(e) = crate::wakeup::recover_incomplete_actions(&pool).await {
-        tracing::warn!("audit startup: failed to recover incomplete actions: {e}");
-    }
+    recover_previous_runs(&pool).await;
 
-    // ── Session creation ──────────────────────────────────────────────────────
-    let (session, session_signing_key) = ledger::create_session(
-        &pool,
-        &prompt,
-        llm_backend.backend_name(),
-        llm_backend.model_name(),
-        policy_hash.as_deref(),
-    )
-    .await?;
+    let (session, session_signing_key) = pool
+        .create_session(
+            &prompt,
+            llm_backend.backend_name(),
+            llm_backend.model_name(),
+            policy_hash.as_deref(),
+        )
+        .await?;
     metrics.inc_sessions_created();
     let session_id = session.id;
+    // On stdout whatever RUST_LOG says: `verify-session`, `report` and the
+    // dashboard all start from this id, and nothing else prints it.
+    println!("Session {session_id} started.");
 
-    // Persist the signing key so a crash doesn't invalidate the audit trail.
-    let key_dir = config::session_key_dir();
-    let signing_password = if let Some(fd) = key_password_fd {
-        crate::signing::read_password_from_fd(fd)
-    } else {
-        crate::signing::prompt_or_env_password(
-            "Set a password to protect this session's signing key (leave blank to skip): ",
-        )
-    };
-    if let Some(ref pw) = signing_password
-        && let Err(e) =
-            crate::signing::save_session_key(&key_dir, session_id, &session_signing_key, pw)
-    {
-        tracing::warn!(
-            "Could not persist signing key: {}. Key will be lost on crash.",
-            e
-        );
-    }
-
+    persist_signing_key(session_id, &session_signing_key, key_password_fd);
     let session_signing_key = Arc::new(session_signing_key);
 
-    // ── Initial thought event ─────────────────────────────────────────────────
-    let goal_thought = if let Some(ref h) = policy_hash {
-        format!("Audit goal: {}. Policy hash: {}", prompt, h)
-    } else {
-        format!("Audit goal: {}", prompt)
+    let goal_thought = match &policy_hash {
+        Some(hash) => format!("Audit goal: {prompt}. Policy hash: {hash}"),
+        None => format!("Audit goal: {prompt}"),
     };
-    ledger::append_event(
-        &pool,
+    pool.append_event(
         EventPayload::Thought {
             content: goal_thought,
         },
@@ -171,127 +134,44 @@ pub async fn run(
         llm_backend.model_name()
     );
 
-    // ── Cloud credentials ─────────────────────────────────────────────────────
     let cloud_creds = crate::cloud_creds::load_cloud_creds().map(Arc::new);
-    if let Some(ref c) = cloud_creds {
+    if let Some(ref creds) = cloud_creds {
         tracing::info!(
             "Cloud credentials loaded: {} (provider: {})",
-            c.name,
-            c.provider
+            creds.name,
+            creds.provider
         );
     }
 
-    // ── Approval state ────────────────────────────────────────────────────────
-    let approval_state = Arc::new(crate::approvals::ApprovalState::new());
-
-    // ── Observer HTTP server ──────────────────────────────────────────────────
-    let pool_observer = pool.clone();
-    let metrics_observer = metrics.clone();
-    let approval_state_server = Arc::clone(&approval_state);
-    let audit_bind_host = config::bind_host();
-    let audit_bind_port = config::bind_port();
-    let audit_bind_addr = format!("{}:{}", audit_bind_host, audit_bind_port);
-    let audit_listener = TcpListener::bind(&audit_bind_addr).await?;
-    let audit_display_host = if audit_bind_host == "0.0.0.0" {
-        "localhost".to_string()
-    } else {
-        audit_bind_host.clone()
-    };
-    tracing::info!(
-        "Observer dashboard: http://{}:{}",
-        audit_display_host,
-        audit_bind_port
-    );
-
-    // ── Supervision: shared cancellation token ────────────────────────────────
+    let approval_state = Arc::new(crate::approvals::ApprovalState::for_pool(&pool));
     let cancel = CancellationToken::new();
-
-    // Use a oneshot channel to detect early server failure.
-    let (server_ready_tx, server_ready_rx) = tokio::sync::oneshot::channel::<()>();
-    let server_cancel = cancel.clone();
-    let server_handle = tokio::spawn(async move {
-        let _ = server_ready_tx.send(());
-        let (made_router, _task_tracker) = server::router_with_approval_state(
-            pool::DatabasePool::Postgres(pool_observer),
-            metrics_observer,
-            approval_state_server,
-            server_cancel.clone(),
-            None,
-        );
-        let server = axum::serve(
-            audit_listener,
-            made_router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(server_cancel.cancelled_owned());
-
-        if let Err(e) = server.await {
-            tracing::error!("Observer server terminated with error: {}", e);
-        }
-    });
-
-    // Wait briefly for the server task to confirm it entered the serve loop.
+    let server_handle = start_observer_server(
+        pool.clone(),
+        metrics.clone(),
+        Arc::clone(&approval_state),
+        cancel.clone(),
+    )
+    .await?;
     let mut server_handle = std::pin::pin!(server_handle);
-    tokio::select! {
-        _ = server_ready_rx => { /* server entered serve loop — proceed */ }
-        result = &mut server_handle => {
-            cancel.cancel();
-            match result {
-                Ok(()) => return Err("Observer server exited immediately — cannot proceed with audit.".into()),
-                Err(e) => return Err(format!("Observer server task panicked: {}", e).into()),
-            }
-        }
-    }
 
-    // ── Tripwire + Guard ──────────────────────────────────────────────────────
-    let tw_cfg = config::load_tripwire_config();
-    let allowed_paths: Vec<PathBuf> = tw_cfg.allowed_paths.iter().map(PathBuf::from).collect();
-    let tripwire = Tripwire::new(
-        allowed_paths,
-        tw_cfg.allowed_domains,
-        tw_cfg.banned_command_patterns,
-        tw_cfg.min_justification_length,
-        tw_cfg.require_https,
-    );
-
-    let guard: Option<Box<dyn GuardExecutor>> = if no_guard && no_guard_confirmed {
-        tracing::warn!("Running without Guard (--no-guard --no-guard-confirmed).");
-        None
-    } else {
-        if let Err(e) = config::ensure_guard_config() {
-            cancel.cancel();
-            return Err(format!("Configuration error: {}", e).into());
-        }
-        match GuardProcess::spawn() {
-            Ok(g) => Some(Box::new(g)),
-            Err(e) => {
-                cancel.cancel();
-                return Err(format!("Guard process failed to start: {}", e).into());
-            }
-        }
-    };
-
-    // ── Webhook egress worker ─────────────────────────────────────────────────
+    let tripwire = Tripwire::from_operator_config();
     let (egress_sender, egress_handle) =
         crate::webhook::spawn_egress_worker(config::webhook_config(), pool.clone());
-
-    // Keep the original sender for explicit cleanup; pass a clone into the
-    // agent config so the channel is guaranteed to close even if the cognitive
-    // loop future is cancelled mid-flight.
+    // Keep a sender here so the channel closes below even if the cognitive
+    // loop future is cancelled mid-flight while holding its own copy.
     let egress_tx_cleanup = egress_sender.clone();
-    let egress_tx = Some(egress_sender);
 
-    // ── Agent configuration ───────────────────────────────────────────────────
     let agent_config = AgentLoopConfig {
         llm: llm_backend,
         tripwire: &tripwire,
-        max_steps: Some(config::max_steps()),
+        max_steps: config::max_steps_configured(),
         session_id: Some(session_id),
         session_goal: prompt.clone(),
         guard,
         policy: policy_engine.as_ref(),
         session_signing_key: Some(session_signing_key),
         metrics: Some(metrics),
-        egress_tx,
+        egress_tx: Some(egress_sender),
         cloud_creds,
         interactive,
         approval_state: Some(approval_state),
@@ -304,143 +184,258 @@ pub async fn run(
         cancel: Some(cancel.clone()),
     };
 
-    // ── Main supervision loop ─────────────────────────────────────────────────
-    //
-    // Both the cognitive loop and the server are supervised. Any failure in
-    // either task triggers cooperative cancellation of the other.
-
-    let agent_pool = crate::pool::DatabasePool::Postgres(pool.clone());
-    let (aborted, session_finished) = tokio::select! {
+    let agent_pool = pool.clone();
+    let ending = tokio::select! {
         result = agent::run_cognitive_loop(&agent_pool, &client, agent_config) => {
-            match &result {
-                Ok(()) => {
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "completed").await {
-                        tracing::warn!("Failed to mark session {} as completed: {}", session_id, e);
-                    }
-                    tracing::info!("Cognitive loop finished.");
-                }
-                Err(AgentError::Append(AppendError::GoalMismatch)) => {
-                    if let Err(e) = ledger::append_event(
-                        &pool,
-                        EventPayload::Thought {
-                            content: "Security: session goal mismatch (possible redirect); aborting.".to_string(),
-                        },
-                        Some(session_id),
-                        None,
-                        None,
-                    ).await {
-                        tracing::warn!("Failed to append goal-mismatch thought: {}", e);
-                    }
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "aborted").await {
-                        tracing::warn!("Failed to mark session {} as aborted: {}", session_id, e);
-                    }
-                    cancel.cancel();
-                    return Err("Session aborted: goal mismatch.".into());
-                }
-                Err(AgentError::Append(AppendError::UnverifiedEvidence(msg))) => {
-                    if let Err(e) = ledger::append_event(
-                        &pool,
-                        EventPayload::Thought {
-                            content: format!("Findings verification failed: {}; commit rejected.", msg),
-                        },
-                        Some(session_id),
-                        None,
-                        None,
-                    ).await {
-                        tracing::warn!("Failed to append verification-failure thought: {}", e);
-                    }
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "failed").await {
-                        tracing::warn!("Failed to mark session {} as failed: {}", session_id, e);
-                    }
-                    cancel.cancel();
-                    return Err(format!("Session failed: {}", msg).into());
-                }
-                Err(AgentError::TripwireAbort(reason)) => {
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "aborted").await {
-                        tracing::warn!("Failed to mark session {} as aborted: {}", session_id, e);
-                    }
-                    cancel.cancel();
-                    return Err(format!("Session aborted (tripwire): {}", reason).into());
-                }
-                Err(AgentError::Cancelled) => {
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "aborted").await {
-                        tracing::warn!("Failed to mark session {} as aborted: {}", session_id, e);
-                    }
-                    cancel.cancel();
-                }
-                Err(_) => {
-                    if let Err(e) = ledger::finish_session(&pool, session_id, "failed").await {
-                        tracing::warn!("Failed to mark session {} as failed: {}", session_id, e);
-                    }
-                    cancel.cancel();
-                    result?;
-                }
-            }
-            // Signal the server to shut down gracefully now that the audit is done.
+            let outcome = conclude_session(&pool, session_id, result).await;
             cancel.cancel();
-            (false, false)
+            outcome?;
+            AuditEnding { aborted: false, session_finished: false }
         }
         result = &mut server_handle => {
-            // The dashboard server exited or panicked while the cognitive
-            // loop was running — abort so the user isn't left headless.
             match result {
                 Ok(()) => tracing::error!("Observer server exited unexpectedly during audit."),
                 Err(e) => tracing::error!("Observer server panicked during audit: {}", e),
             }
-            if let Err(e) = ledger::finish_session(&pool, session_id, "failed").await {
-                tracing::warn!("Failed to mark session {} as failed: {}", session_id, e);
-            }
+            mark_session(&pool, session_id, "failed").await;
             cancel.cancel();
-            (true, true)
+            AuditEnding { aborted: true, session_finished: true }
         }
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Shutdown signal received; cancelling tasks…");
             cancel.cancel();
-            (true, false)
+            AuditEnding { aborted: true, session_finished: false }
         }
     };
 
-    // ── Post-audit cleanup ────────────────────────────────────────────────────
-    // Drop our copy of the egress sender so the egress worker can observe
-    // channel closure and shut down, even if the cognitive loop future was
-    // cancelled before it had a chance to drop its copy.
     drop(egress_tx_cleanup);
     if let Err(e) = egress_handle.await {
         tracing::error!("Webhook egress worker panicked: {e}");
     }
-    if aborted {
-        if let Some((seq, _)) = ledger::get_latest(&pool).await?
-            && let Err(e) = crate::snapshot::snapshot_at_sequence(&pool, seq).await
-        {
-            tracing::warn!("Failed to snapshot on abort: {}", e);
-        }
-        if !session_finished
-            && let Err(e) = ledger::finish_session(&pool, session_id, "aborted").await
-        {
-            tracing::warn!(
-                "Failed to mark session {} as aborted on signal: {}",
-                session_id,
-                e
-            );
-        }
-        tracing::info!("Shutdown signal received; session aborted.");
+    if ending.aborted {
+        snapshot_after_abort(&pool, session_id, ending.session_finished).await?;
     }
+    println!(
+        "Session {session_id} finished. Next:\n  \
+         ironvise verify-session {session_id}\n  \
+         ironvise report {session_id} --format certificate --output audit.elc"
+    );
     Ok(())
 }
 
-/// Run audit using a `DatabasePool` (supports both Postgres and SQLite).
-///
-/// For now the SQLite path returns a "not implemented" error; the Postgres
-/// path delegates to [`run`].
-pub async fn run_with_pool(
-    db: pool::DatabasePool,
-    metrics: Arc<crate::metrics::Metrics>,
-    args: AuditArgs,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    match db {
-        pool::DatabasePool::Postgres(pg) => run(pg, metrics, args).await,
-        pool::DatabasePool::Sqlite(_) => {
-            Err("audit is not yet fully implemented for SQLite mode.".into())
+/// The guard worker, or `None` only when both `--no-guard` flags were given.
+fn start_guard(
+    no_guard: bool,
+    no_guard_confirmed: bool,
+) -> AuditResult<Option<Box<dyn GuardExecutor>>> {
+    match (no_guard, no_guard_confirmed) {
+        (true, false) => Err(
+            "⚠️  WARNING: You specified --no-guard. The Guard provides a separate process \
+             and model to validate actions.\n   Running without the Guard reduces security. \
+             If you really want to proceed, run with:\n   \
+             cargo run -- audit \"<your goal>\" --no-guard --no-guard-confirmed"
+                .into(),
+        ),
+        (true, true) => {
+            tracing::warn!("Running without Guard (--no-guard --no-guard-confirmed).");
+            Ok(None)
+        }
+        (false, _) => {
+            config::ensure_guard_config().map_err(|e| format!("Configuration error: {e}"))?;
+            let worker =
+                GuardProcess::spawn().map_err(|e| format!("Guard process failed to start: {e}"))?;
+            Ok(Some(Box::new(worker)))
         }
     }
+}
+
+/// Load a policy file and its hash, refusing one with nothing to enforce.
+///
+/// The session records this policy's hash as the one it ran under; a file with
+/// no rules (the ISO 42001 controls mapping) would make that a claim about
+/// checks that never ran.
+fn load_enforceable_policy(path: &Path) -> Result<(PolicyEngine, String), std::io::Error> {
+    let content = std::fs::read(path).inspect_err(|e| {
+        tracing::error!("Failed to read policy file: {}", e);
+    })?;
+    let hash = crate::policy::policy_hash_bytes(&content);
+    let engine = crate::policy::load_policy_engine(path).map_err(|e| {
+        tracing::error!("Failed to load policy: {}", e);
+        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+    })?;
+    if !engine.policy().has_enforceable_rules() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "{} has no rules to check actions against, so it cannot govern an audit",
+                path.display()
+            ),
+        ));
+    }
+    Ok((engine, hash))
+}
+
+/// Clean up sessions and actions a previous server run left half-done.
+async fn recover_previous_runs(pool: &DatabasePool) {
+    if let Err(e) = crate::wakeup::recover_zombie_sessions(pool).await {
+        tracing::warn!("audit startup: failed to recover zombie sessions: {e}");
+    }
+    if let Err(e) = crate::wakeup::recover_incomplete_actions(pool).await {
+        tracing::warn!("audit startup: failed to recover incomplete actions: {e}");
+    }
+}
+
+/// Save the session key under a password, so a crash does not invalidate the
+/// audit trail. Without a password the key lives only in memory.
+fn persist_signing_key(session_id: Uuid, key: &SigningKey, key_password_fd: Option<i32>) {
+    let password = match key_password_fd {
+        Some(fd) => crate::signing::read_password_from_fd(fd),
+        None => crate::signing::prompt_or_env_password(
+            "Set a password to protect this session's signing key (leave blank to skip): ",
+        ),
+    };
+    let Some(password) = password else { return };
+    if let Err(e) =
+        crate::signing::save_session_key(&config::session_key_dir(), session_id, key, &password)
+    {
+        tracing::warn!(
+            "Could not persist signing key: {}. Key will be lost on crash.",
+            e
+        );
+    }
+}
+
+/// Bind the Observer dashboard and wait until its task is serving.
+async fn start_observer_server(
+    pool: DatabasePool,
+    metrics: Arc<crate::metrics::Metrics>,
+    approval_state: Arc<crate::approvals::ApprovalState>,
+    cancel: CancellationToken,
+) -> AuditResult<JoinHandle<()>> {
+    let bind_host = config::bind_host();
+    let bind_port = config::bind_port();
+    let listener = TcpListener::bind(format!("{bind_host}:{bind_port}")).await?;
+    let display_host = if bind_host == "0.0.0.0" {
+        "localhost"
+    } else {
+        bind_host.as_str()
+    };
+    tracing::info!("Observer dashboard: http://{}:{}", display_host, bind_port);
+
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+    let server_cancel = cancel.clone();
+    let mut handle = tokio::spawn(async move {
+        let _ = ready_tx.send(());
+        let (router, _task_tracker) = server::router_with_approval_state(
+            pool,
+            metrics,
+            approval_state,
+            server_cancel.clone(),
+            None,
+        );
+        let server = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(server_cancel.cancelled_owned());
+        if let Err(e) = server.await {
+            tracing::error!("Observer server terminated with error: {}", e);
+        }
+    });
+
+    tokio::select! {
+        _ = ready_rx => Ok(handle),
+        result = &mut handle => {
+            cancel.cancel();
+            match result {
+                Ok(()) => Err("Observer server exited immediately - cannot proceed with audit.".into()),
+                Err(e) => Err(format!("Observer server task panicked: {e}").into()),
+            }
+        }
+    }
+}
+
+/// Record how the cognitive loop ended and seal the session with the matching
+/// status. Returns the error the CLI should report, if any.
+async fn conclude_session(
+    pool: &DatabasePool,
+    session_id: Uuid,
+    result: Result<(), AgentError>,
+) -> AuditResult<()> {
+    match result {
+        Ok(()) => {
+            mark_session(pool, session_id, "completed").await;
+            tracing::info!("Cognitive loop finished.");
+            Ok(())
+        }
+        Err(AgentError::Append(AppendError::GoalMismatch)) => {
+            record_thought(
+                pool,
+                session_id,
+                "Security: session goal mismatch (possible redirect); aborting.".to_string(),
+            )
+            .await;
+            mark_session(pool, session_id, "aborted").await;
+            Err("Session aborted: goal mismatch.".into())
+        }
+        Err(AgentError::Append(AppendError::UnverifiedEvidence(msg))) => {
+            record_thought(
+                pool,
+                session_id,
+                format!("Findings verification failed: {msg}; commit rejected."),
+            )
+            .await;
+            mark_session(pool, session_id, "failed").await;
+            Err(format!("Session failed: {msg}").into())
+        }
+        Err(AgentError::TripwireAbort(reason)) => {
+            mark_session(pool, session_id, "aborted").await;
+            Err(format!("Session aborted (tripwire): {reason}").into())
+        }
+        Err(AgentError::Cancelled) => {
+            mark_session(pool, session_id, "aborted").await;
+            Ok(())
+        }
+        Err(other) => {
+            mark_session(pool, session_id, "failed").await;
+            Err(other.into())
+        }
+    }
+}
+
+async fn record_thought(pool: &DatabasePool, session_id: Uuid, content: String) {
+    if let Err(e) = pool
+        .append_event(
+            EventPayload::Thought { content },
+            Some(session_id),
+            None,
+            None,
+        )
+        .await
+    {
+        tracing::warn!("Failed to append thought to session {}: {}", session_id, e);
+    }
+}
+
+async fn mark_session(pool: &DatabasePool, session_id: Uuid, status: &str) {
+    if let Err(e) = pool.finish_session(session_id, status).await {
+        tracing::warn!("Failed to mark session {} as {}: {}", session_id, status, e);
+    }
+}
+
+async fn snapshot_after_abort(
+    pool: &DatabasePool,
+    session_id: Uuid,
+    session_finished: bool,
+) -> AuditResult<()> {
+    if let Some((seq, _)) = pool.get_latest().await?
+        && let Err(e) = pool.snapshot_at_sequence(seq).await
+    {
+        tracing::warn!("Failed to snapshot on abort: {}", e);
+    }
+    if !session_finished {
+        mark_session(pool, session_id, "aborted").await;
+    }
+    tracing::info!("Shutdown signal received; session aborted.");
+    Ok(())
 }

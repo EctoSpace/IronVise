@@ -1,22 +1,18 @@
 //! PostgreSQL `LISTEN/NOTIFY` helpers for cross-instance SSE fanout.
 //!
-//! When multiple EctoLedger instances share a PostgreSQL database the
+//! When multiple IronVise instances share a PostgreSQL database the
 //! in-process `tokio::sync::broadcast` channel only wakes SSE clients
 //! connected to the local instance.  This module bridges the gap:
 //!
-//! 1. **[`notify_new_event`]** — Called after each event append to issue
+//! 1. **[`notify_new_event`]** - Called after each event append to issue
 //!    `NOTIFY ectoledger_events`.  This is a no-op for SQLite.
-//! 2. **[`spawn_pg_listener`]** — Spawns a background task that
-//!    `LISTEN`s on the channel and calls [`crate::server::notify_sse_subscribers`]
-//!    whenever a notification arrives from any instance (including self).
+//! 2. **[`spawn_pg_listener`]** - Spawns a background task that
+//!    `LISTEN`s on the channel and calls `on_notify` whenever a notification
+//!    arrives from any instance (including self).
 //!
-//! # Wiring
-//!
-//! • Call `spawn_pg_listener(&pg_pool)` once during server startup.
-//! • Call `notify_new_event(&pg_pool).await` after every successful
-//!   `INSERT INTO agent_events`.
-//!
-//! See `docs/SCALING.md` for the full horizontal-scaling design.
+//! The server starts one listener per process on PostgreSQL, alongside the
+//! in-process wakeup. Multi-instance deployment as a whole is not supported
+//! yet (see `docs/guides/scaling.md`); this closes the SSE part of it.
 
 use sqlx::PgPool;
 
@@ -30,7 +26,8 @@ pub const CHANNEL: &str = "ectoledger_events";
 /// delayed SSE update on other instances (they will catch up via their
 /// periodic poll or on the next successful NOTIFY).
 pub async fn notify_new_event(pool: &PgPool) {
-    let result = sqlx::query(&format!("NOTIFY {}", CHANNEL))
+    // A channel cannot be a bind parameter; CHANNEL is a constant.
+    let result = sqlx::query(sqlx::AssertSqlSafe(format!("NOTIFY {CHANNEL}")))
         .execute(pool)
         .await;
     if let Err(e) = result {
@@ -38,15 +35,15 @@ pub async fn notify_new_event(pool: &PgPool) {
     }
 }
 
-/// Spawn a long-lived background task that listens for PostgreSQL
-/// notifications and wakes local SSE subscribers.
-///
-/// Returns a `tokio::task::JoinHandle` that can be used to cancel the
-/// listener on shutdown.
-pub fn spawn_pg_listener(pool: &PgPool) -> tokio::task::JoinHandle<()> {
+/// Spawn a background task that listens for PostgreSQL notifications and
+/// calls `on_notify` for each, until `cancel` fires.
+pub fn spawn_pg_listener(
+    pool: &PgPool,
+    cancel: tokio_util::sync::CancellationToken,
+    on_notify: impl Fn() + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
     let pool = pool.clone();
     tokio::spawn(async move {
-        // PgListener needs the raw connection options from the pool.
         let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
             Ok(l) => l,
             Err(e) => {
@@ -57,7 +54,6 @@ pub fn spawn_pg_listener(pool: &PgPool) -> tokio::task::JoinHandle<()> {
                 return;
             }
         };
-
         if let Err(e) = listener.listen(CHANNEL).await {
             tracing::error!(
                 "LISTEN {} failed: {}. Cross-instance SSE wakeups disabled.",
@@ -66,24 +62,15 @@ pub fn spawn_pg_listener(pool: &PgPool) -> tokio::task::JoinHandle<()> {
             );
             return;
         }
-
-        tracing::info!(
-            "Listening on pg channel '{}' for cross-instance SSE wakeups",
-            CHANNEL
-        );
-
+        tracing::info!("Listening on pg channel '{CHANNEL}' for cross-instance SSE wakeups");
         loop {
-            match listener.recv().await {
-                Ok(_notification) => {
-                    // Wake all local SSE subscribers — they will re-poll
-                    // the DB and pick up any new events.
-                    crate::server::notify_sse_subscribers();
-                }
-                Err(e) => {
-                    // sqlx::PgListener reconnects automatically on
-                    // transient errors.  Log and continue.
-                    tracing::warn!("PgListener recv error (will retry): {}", e);
-                }
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                received = listener.recv() => match received {
+                    Ok(_) => on_notify(),
+                    // PgListener reconnects on transient errors.
+                    Err(e) => tracing::warn!("PgListener recv error (will retry): {e}"),
+                },
             }
         }
     })

@@ -1,4 +1,4 @@
-//! OS-level sandboxing and canonical output formatting for EctoLedger.
+//! OS-level sandboxing and canonical output formatting for IronVise.
 //!
 //! This crate isolates all platform-specific sandbox code (Landlock, Seatbelt,
 //! Windows Job Objects, seccomp-BPF) and container orchestration (Docker,

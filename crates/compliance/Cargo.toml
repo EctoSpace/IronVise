@@ -3,7 +3,7 @@ name        = "ectoledger-compliance"
 version.workspace     = true
 edition.workspace     = true
 authors.workspace     = true
-description = "Compliance artefact modules for EctoLedger: OpenTimestamps, EVM anchoring, Verifiable Credentials"
+description = "Compliance artefact modules for IronVise: OpenTimestamps, Verifiable Credentials"
 license.workspace     = true
 
 [dependencies]
@@ -12,20 +12,18 @@ serde           = { workspace = true }
 serde_json      = { workspace = true }
 hex             = { workspace = true }
 reqwest         = { version = "0.13", features = ["json"] }
-base64          = "0.22"
+base64          = "0.23"
 bs58            = "0.5"
 chrono          = { workspace = true }
 ed25519-dalek   = { workspace = true }
 uuid            = { workspace = true }
 
-# Optional EVM anchoring dependencies (feature-gated)
-k256  = { version = "0.13", optional = true, features = ["ecdsa"] }
-sha3  = { version = "0.10", optional = true }
-
 # Optional ECDSA P-256 VC signing
-p256  = { version = "0.13", optional = true, features = ["ecdsa"] }
+p256  = { version = "0.14", optional = true, features = ["ecdsa"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time"] }
 
 [features]
-default    = ["evm"]
-evm        = ["dep:k256", "dep:sha3"]
+default    = []
 vc-ecdsa   = ["dep:p256"]

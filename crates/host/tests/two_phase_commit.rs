@@ -6,7 +6,10 @@ use ectoledger::schema::EventPayload;
 use ectoledger::wakeup;
 
 #[tokio::test]
-#[cfg_attr(not(feature = "integration"), ignore)] // run with: cargo test --features integration
+#[cfg_attr(
+    not(feature = "integration"),
+    ignore = "needs PostgreSQL; run with --features integration"
+)]
 async fn recover_incomplete_actions_appends_failure_observation() {
     let (pool, _db) = spawn_test_pool().await;
     reset_ledger(&pool).await;
@@ -27,7 +30,8 @@ async fn recover_incomplete_actions_appends_failure_observation() {
         .await
         .expect("mark_executing");
 
-    wakeup::recover_incomplete_actions(&pool)
+    let db = ectoledger::pool::DatabasePool::Postgres(pool.clone());
+    wakeup::recover_incomplete_actions(&db)
         .await
         .expect("recover");
 

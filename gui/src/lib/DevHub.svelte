@@ -1,15 +1,15 @@
 <!--
-  DevHub — Developer Hub tab.
+  DevHub - Developer Hub tab.
 
-  Track 6: Shows SDK integration snippets, API reference, and quick-start
+  Shows SDK integration snippets, API reference, and quick-start
   guides for Python and TypeScript SDKs. Includes interactive "Run Test"
   buttons that spawn shell commands and stream output into the GUI.
 -->
 <script lang="ts">
-  import { isTauri } from "@tauri-apps/api/core";
-  import { Command, type Child } from "@tauri-apps/plugin-shell";
+  import { invoke, isTauri } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onDestroy } from "svelte";
-  import { Card, Badge, Button } from "./ui";
+  import { Badge, Button, Card, FieldLabel, Panel } from "./ui";
 
   interface Props {
     serverUrl: string;
@@ -19,17 +19,24 @@
 
   let activeSDK = $state<"python" | "typescript">("python");
   let _alive = true;
-  let _activeChildren: Child[] = [];
 
   onDestroy(() => {
     _alive = false;
-    for (const child of _activeChildren) {
-      child.kill().catch(() => {});
-    }
-    _activeChildren = [];
   });
 
-  // ── Run Test state ────────────────────────────────────────────────────────
+  // The exact (cmd, cwd) pairs allowlisted in the Rust backend
+  // (commands.rs ALLOWED_DEV_COMMANDS); anything else is rejected there.
+  const DEV_COMMANDS = {
+    python: {
+      cmd: 'python -m pip install -e ".[langchain,autogen]" && python -m pytest tests/',
+      cwd: "sdk/python",
+    },
+    typescript: {
+      cmd: "npm ci && npm run build",
+      cwd: "sdk/typescript",
+    },
+  } as const;
+
   interface TestRun {
     output: string[];
     running: boolean;
@@ -42,17 +49,14 @@
   let tsTest  = $state<TestRun>(emptyRun());
 
   /**
-   * Run SDK tests via Tauri shell plugin and stream output into the GUI.
-   *
-   * @param sdk    - which SDK to test
-   * @param cmd    - shell executable ("python" | "python3" | "npm")
-   * @param args   - argument list passed to the executable
+   * Run SDK tests via the backend's allowlisted `run_shell_command_streaming`
+   * Tauri command; output lines arrive as "shell-command-output" events.
    */
   async function runTests(sdk: "python" | "typescript") {
     if (!isTauri()) return;
 
-    const handle = sdk === "python" ? pyTest : tsTest;
-    if (handle.running) return;
+    // Only one run at a time: the output event channel is shared.
+    if (pyTest.running || tsTest.running) return;
 
     if (sdk === "python") {
       pyTest = { output: [], running: true, exitCode: null, error: "" };
@@ -69,39 +73,21 @@
       }
     };
 
+    let unlisten: UnlistenFn | null = null;
     try {
-      // Python command (single line, verbatim per spec):
-      // python -m pip install ectoledger_sdk[langchain,autogen] && python -m pytest tests/
-      //
-      // TypeScript command:
-      // npm ci && npx vitest run
-      const isWin = navigator.userAgent.includes("Windows");
-      const shellExe  = isWin ? "cmd" : "sh";
-      const shellFlag = isWin ? "/C"  : "-c";
-      const cmdLine = sdk === "python"
-        ? "python -m pip install ectoledger_sdk[langchain,autogen] && python -m pytest tests/"
-        : "npm ci && npx vitest run";
+      unlisten = await listen<{ line: string; stream: string }>(
+        "shell-command-output",
+        (ev) => {
+          if (_alive) appendLine(ev.payload.line, ev.payload.stream === "stderr");
+        },
+      );
 
-      // Tauri v2 plugin-shell: register listeners on the Command object,
-      // spawn the process, then await the close-event promise.
-      const cmd = Command.create(shellExe, [shellFlag, cmdLine]);
-
-      cmd.stdout.on("data", (line: string) => { if (_alive) appendLine(line); });
-      cmd.stderr.on("data", (line: string) => { if (_alive) appendLine(line, true); });
-
-      // Build the close-promise BEFORE spawn so the handler is registered.
-      const closePromise = new Promise<number>((resolve) => {
-        cmd.on("close", (data: { code: number | null }) => resolve(data.code ?? -1));
-        cmd.on("error", (msg: string) => {
-          if (_alive) appendLine(`[error] ${msg}`, true);
-          resolve(-1);
-        });
-      });
-
-      const child = await cmd.spawn(); // kick off the process
-      _activeChildren.push(child);
-      const code = await closePromise; // wait for it to finish
-      _activeChildren = _activeChildren.filter(c => c !== child);
+      const { cmd, cwd } = DEV_COMMANDS[sdk];
+      const result = await invoke<{ stdout: string; stderr: string; exit_code: number | null }>(
+        "run_shell_command_streaming",
+        { args: { cmd, cwd } },
+      );
+      const code = result.exit_code ?? -1;
 
       if (sdk === "python") {
         pyTest = { ...pyTest, running: false, exitCode: code };
@@ -109,12 +95,14 @@
         tsTest = { ...tsTest, running: false, exitCode: code };
       }
     } catch (e) {
-      const msg = `Shell command failed: ${e}`;
+      const msg = `Test run failed: ${e}`;
       if (sdk === "python") {
         pyTest = { ...pyTest, running: false, exitCode: -1, error: msg };
       } else {
         tsTest = { ...tsTest, running: false, exitCode: -1, error: msg };
       }
+    } finally {
+      unlisten?.();
     }
   }
 
@@ -127,9 +115,9 @@
     return code === 0 ? "✓ Passed" : `✗ Exited ${code}`;
   }
 
-  const pythonInstall = `pip install ectoledger-sdk`;
+  const pythonInstall = `pip install ./sdk/python`;
   const pythonQuickstart = $derived(`import asyncio
-from ectoledger_sdk import LedgerClient
+from ironvise_sdk import LedgerClient
 
 async def main():
     async with LedgerClient(
@@ -138,9 +126,11 @@ async def main():
     ) as client:
         # Create a session and append events
         session = await client.create_session(
-            goal="Audit the login endpoint for OWASP Top 10"
+            goal="Audit the login endpoint for OWASP Top 10",
+            record=True,
         )
         await client.append_event(session.session_id, {"step": "read", "file": "config.py"})
+        await client.seal_session(session.session_id)
 
         # Verify the hash chain
         ok = await client.verify_chain(session.session_id)
@@ -150,14 +140,12 @@ async def main():
         vc = await client.get_session_vc(session.session_id)
         print(f"VC issued: {vc}")
 
-        await client.seal_session(session.session_id)
-
 asyncio.run(main())`);
 
-  const tsInstall = `npm install ectoledger-sdk`;
-  const tsQuickstart = $derived(`import { EctoLedgerClient } from "ectoledger-sdk";
+  const tsInstall = `cd sdk/typescript && npm install && npm run build`;
+  const tsQuickstart = $derived(`import { IronViseClient } from "ironvise";
 
-const client = new EctoLedgerClient({
+const client = new IronViseClient({
   baseUrl: "${serverUrl}",
   bearerToken: "your-api-token",
 });
@@ -165,18 +153,19 @@ const client = new EctoLedgerClient({
 // Create a session and append events
 const session = await client.createSession({
   goal: "Audit the login endpoint for OWASP Top 10",
+  record: true,
 });
-await client.appendEvent(session.session_id, { step: "read", file: "config.ts" });
+await client.appendEvent(session.id, { step: "read", file: "config.ts" });
+await client.sealSession(session.id);
 
 // Verify the hash chain
-const ok = await client.verifyChain(session.session_id);
+const ok = await client.verifyChain(session.id);
 console.log(\`Chain intact: \${ok}\`);
 
 // Get the Verifiable Credential
-const vc = await client.getSessionVc(session.session_id);
+const vc = await client.getSessionVc(session.id);
 console.log(\`VC issued:\`, vc);
-
-await client.sealSession(session.session_id);`);
+`);
 
   const apiEndpoints = [
     { method: "GET",    path: "/api/sessions",              desc: "List all audit sessions" },
@@ -237,7 +226,7 @@ await client.sealSession(session.session_id);`);
         <div class="space-y-4">
           <div>
             <h4 class="text-xs text-text-muted uppercase tracking-wider mb-2">Install</h4>
-            <pre class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15 text-sm font-mono text-accent overflow-x-auto">{activeSDK === "python" ? pythonInstall : tsInstall}</pre>
+            <Panel class="overflow-x-auto"><pre class="m-0 text-sm font-mono text-accent-text">{activeSDK === "python" ? pythonInstall : tsInstall}</pre></Panel>
           </div>
           <div>
             <h4 class="text-xs text-text-muted uppercase tracking-wider mb-2">Quick Start</h4>
@@ -271,18 +260,18 @@ await client.sealSession(session.session_id);`);
   <Card title="Connection Details">
     {#snippet children()}
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-          <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Server URL</div>
-          <code class="text-sm text-accent font-mono">{serverUrl}</code>
-        </div>
-        <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-          <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Database</div>
+        <Panel>
+          <FieldLabel spacing="below">Server URL</FieldLabel>
+          <code class="text-sm text-accent-text font-mono">{serverUrl}</code>
+        </Panel>
+        <Panel>
+          <FieldLabel spacing="below">Database</FieldLabel>
           <span class="text-sm text-text-primary">SQLite (embedded)</span>
-        </div>
-        <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-          <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Authentication</div>
+        </Panel>
+        <Panel>
+          <FieldLabel spacing="below">Authentication</FieldLabel>
           <span class="text-sm text-text-primary">Bearer Token (RBAC)</span>
-        </div>
+        </Panel>
       </div>
     {/snippet}
   </Card>
@@ -298,7 +287,7 @@ await client.sealSession(session.session_id);`);
             <div class="flex-1 min-w-0">
               <h4 class="text-sm font-semibold text-text-primary">Python SDK</h4>
               <code class="text-xs font-mono text-text-muted break-all">
-                python -m pip install ectoledger_sdk[langchain,autogen] &amp;&amp; python -m pytest tests/
+                python -m pip install -e ".[langchain,autogen]" &amp;&amp; python -m pytest tests/
               </code>
             </div>
             <div class="flex items-center gap-2 shrink-0">
@@ -332,7 +321,7 @@ await client.sealSession(session.session_id);`);
           <div class="flex items-center justify-between gap-4">
             <div class="flex-1 min-w-0">
               <h4 class="text-sm font-semibold text-text-primary">TypeScript SDK</h4>
-              <code class="text-xs font-mono text-text-muted">npm ci &amp;&amp; npx vitest run</code>
+              <code class="text-xs font-mono text-text-muted">npm ci &amp;&amp; npm run build</code>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               {#if tsTest.exitCode !== null}

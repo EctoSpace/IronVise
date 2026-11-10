@@ -19,18 +19,51 @@
     _timers.forEach(clearTimeout);
   });
 
-  const DEFAULT_POLICY_TEMPLATE = `# New policy
+  // Written as tables, the engine's own format (bare names are accepted
+  // too). See audit_policy.example.toml for every rule.
+  const DEFAULT_POLICY_TEMPLATE = `# New policy. Every rule: audit_policy.example.toml
 
 name = "policy-name"
 goal = "Describe the audit goal here."
 max_steps = 20
 
-allowed_actions = ["run_command", "read_file", "http_get", "complete"]
-forbidden_actions = ["write_file", "delete_file"]
-required_checks = []
+[[forbidden_actions]]
+action = "write_file"
+
+[[forbidden_actions]]
+action = "delete_file"
 `;
 
-  onMount(load);
+  /** The policy Home → Run uses (Settings' active_policy), and the
+   *  environment's ECTO_POLICY_PATH, which wins when set. */
+  let activePolicy = $state("");
+  let policyFromEnv = $state("");
+  let activeMsg = $state("");
+
+  async function loadActive() {
+    try {
+      const cfg = await invoke<{ active_policy?: string | null; policy_from_environment?: string | null }>("get_config");
+      activePolicy = cfg?.active_policy ?? "";
+      policyFromEnv = cfg?.policy_from_environment ?? "";
+    } catch {
+      /* the editor still works without it */
+    }
+  }
+
+  async function useForRuns(name: string) {
+    activeMsg = "";
+    try {
+      await invoke("save_config", { payload: { active_policy: name } });
+      activePolicy = name;
+    } catch (e) {
+      activeMsg = String(e);
+    }
+  }
+
+  onMount(() => {
+    load();
+    loadActive();
+  });
 
   async function load() {
     if (!isTauri()) return;
@@ -129,7 +162,8 @@ required_checks = []
   }
 
   const dirty = $derived(content !== original);
-  const canDelete = $derived(selected && !dirty && !BUILTIN_POLICIES.includes(selected));
+  const canDelete = $derived(selected && !dirty && !BUILTIN_POLICIES.includes(selected) && selected !== activePolicy);
+  const isBuiltin = $derived(BUILTIN_POLICIES.includes(selected));
 
   const validationError = $derived.by(() => {
     try {
@@ -151,7 +185,7 @@ required_checks = []
 
 <div class="flex gap-6 h-full overflow-hidden">
   <!-- Policy list -->
-  <aside class="bg-surface rounded-2xl w-64 min-w-64 max-w-64 p-6 overflow-y-auto overflow-x-hidden flex flex-col gap-3 shrink-0 shadow-sm">
+  <aside class="bg-surface rounded-2xl w-72 min-w-72 max-w-72 p-6 overflow-y-auto overflow-x-hidden flex flex-col gap-3 shrink-0 shadow-sm border border-border-muted/40">
     <h2 class="text-sm font-semibold uppercase tracking-wider text-text-muted mb-3">Policies</h2>
     <div class="flex gap-2 mb-4 shrink-0 min-w-0">
       <input
@@ -163,7 +197,7 @@ required_checks = []
       />
       <button
         type="button"
-        class="bg-surface-elevated border border-border-muted/40 rounded-xl text-accent px-4 py-2.5 text-sm font-semibold cursor-pointer whitespace-nowrap hover:bg-border-muted disabled:opacity-50 disabled:cursor-default transition-all duration-200"
+        class="bg-surface-elevated border border-border-muted/40 rounded-xl text-accent-text px-4 py-2.5 text-sm font-semibold cursor-pointer whitespace-nowrap hover:bg-border-muted disabled:opacity-50 disabled:cursor-default transition-all duration-200"
         onclick={addPolicy}
         disabled={creating || !newPolicyName.trim()}
       >
@@ -180,7 +214,7 @@ required_checks = []
       {#each policies as p}
         <li>
           <button
-            class="w-full text-left px-4 py-3 bg-transparent border-none rounded-xl text-text-secondary text-sm cursor-pointer transition-all duration-200 hover:bg-surface-elevated hover:text-text-primary {selected === p ? 'bg-surface-elevated text-accent font-semibold' : ''}"
+            class="w-full text-left px-4 py-3 bg-transparent border-none rounded-xl text-text-secondary text-sm cursor-pointer transition-all duration-200 hover:bg-surface-elevated hover:text-text-primary {selected === p ? 'bg-surface-elevated text-accent-text font-semibold' : ''}"
             onclick={() => selectPolicy(p)}
           >
             {p}
@@ -191,37 +225,64 @@ required_checks = []
   </aside>
 
   <!-- Editor pane -->
-  <main class="bg-surface rounded-2xl flex-1 p-7 flex flex-col gap-5 overflow-hidden shadow-sm">
+  <section class="bg-surface rounded-2xl flex-1 p-7 flex flex-col gap-5 overflow-hidden shadow-sm border border-border-muted/40">
     {#if !selected}
       <p class="text-text-muted text-sm text-center mt-16">Select a policy to edit.</p>
     {:else}
-      <div class="flex justify-between items-center">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-text-muted mb-2">{selected}</h2>
-        <div class="flex items-center gap-4">
+      <div class="flex justify-between items-start gap-3 flex-wrap min-w-0">
+        <div class="min-w-0"><p class="text-[11px] font-semibold uppercase tracking-[0.1em] text-text-secondary m-0 mb-1">{isBuiltin ? "Built-in, read only" : "Editing"}</p><h2 class="text-base font-semibold font-mono text-text-primary m-0 min-w-0 truncate">{selected}</h2></div>
+        <div class="flex items-center gap-3 flex-wrap shrink-0">
           {#if saveMsg}
             <span class="text-sm text-success">{saveMsg}</span>
           {/if}
           {#if dirty}
             <span class="text-xs px-2 py-0.5 rounded-full bg-warning-muted text-warning font-semibold">Unsaved</span>
           {/if}
-          <button class="bg-accent text-white border-none rounded-xl px-6 py-3 text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-default transition-all duration-200 active:scale-[0.98] shadow-sm shadow-accent/20 hover:shadow-md hover:bg-accent-hover" onclick={save} disabled={saving || !!validationError}>
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {#if !policyFromEnv}
+            {#if selected === activePolicy}
+              <span class="text-xs px-2 py-0.5 rounded-full bg-success-muted text-success font-semibold">Used for new runs</span>
+              <button class="bg-surface-elevated border border-border-muted/40 rounded-xl px-4 py-3 text-sm font-semibold text-text-primary cursor-pointer hover:bg-border-muted transition-all duration-200" onclick={() => useForRuns("")}>Stop using</button>
+            {:else}
+              <button class="bg-surface-elevated border border-border-muted/40 rounded-xl px-4 py-3 text-sm font-semibold text-text-primary cursor-pointer hover:bg-border-muted disabled:opacity-50 disabled:cursor-default transition-all duration-200" onclick={() => useForRuns(selected)} disabled={dirty}>Use for new runs</button>
+            {/if}
+          {/if}
+          {#if !isBuiltin}
+            <button class="bg-accent-text text-text-inverse border-none rounded-xl px-6 py-3 text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-default transition-all duration-200 active:scale-[0.98] shadow-sm hover:bg-accent" onclick={save} disabled={saving || !!validationError}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          {/if}
           {#if canDelete}
-            <button class="bg-danger-muted text-danger border border-danger/20 rounded-xl px-6 py-3 text-sm font-semibold cursor-pointer hover:bg-danger/20 transition-all duration-200" onclick={deletePolicy}>Delete</button>
+            <button class="bg-danger-muted text-danger-text border border-danger/20 rounded-xl px-6 py-3 text-sm font-semibold cursor-pointer hover:bg-danger/20 transition-all duration-200" onclick={deletePolicy}>Delete</button>
           {/if}
         </div>
       </div>
 
+      <p class="text-xs text-text-muted leading-relaxed m-0 break-words">
+        {#if policyFromEnv}
+          New runs use the policy the environment sets (<code>ECTO_POLICY_PATH</code> = {policyFromEnv}); it overrides the choice here.
+        {:else if activePolicy}
+          New runs from Home are checked against <strong>{activePolicy}</strong>, read when each run starts, so a saved edit applies to the next run.
+        {:else}
+          New runs from Home use no policy: only tripwire (and the semantic guard, if on) checks their actions. Choose one with "Use for new runs".
+        {/if}
+        {#if isBuiltin}Built-in policies cannot be edited; copy the text into a new policy to change it.{/if}
+      </p>
+      {#if activeMsg}
+        <p class="text-xs text-danger-text m-0 break-words" role="alert">{activeMsg}</p>
+      {/if}
+
       {#if validationError}
-        <div class="bg-danger-muted border border-danger/20 rounded-xl px-5 py-4 text-sm text-danger">{validationError}</div>
+        <div class="bg-danger-muted border border-danger/20 rounded-xl px-5 py-4 text-sm text-danger-text">{validationError}</div>
       {/if}
 
       <textarea
         class="flex-1 w-full bg-background border border-border-muted/30 rounded-xl text-text-primary p-6 font-mono text-sm leading-relaxed resize-none outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200 {validationError ? 'border-danger' : ''}"
+        aria-label="Policy file contents (TOML)"
+        aria-invalid={!!validationError}
+        readonly={isBuiltin}
         bind:value={content}
         spellcheck="false"
       ></textarea>
     {/if}
-  </main>
+  </section>
 </div>

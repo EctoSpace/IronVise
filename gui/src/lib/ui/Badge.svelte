@@ -1,5 +1,5 @@
 <!--
-  Enterprise Badge component for status indicators.
+  Badge - status indicators.
   Usage:
     <Badge variant="success">Passed</Badge>
     <Badge variant="danger" dot>Failed</Badge>

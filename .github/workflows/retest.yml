@@ -1,0 +1,201 @@
+name: Selective CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_test_windows:
+        description: "Run build + test on windows-latest"
+        type: boolean
+        default: true
+      run_enclave_windows:
+        description: "Run Enclave crypto tests (windows-latest)"
+        type: boolean
+        default: true
+      run_integration:
+        description: "Run Integration test suite (ubuntu)"
+        type: boolean
+        default: true
+      run_gui:
+        description: "Run GUI build & check (ubuntu)"
+        type: boolean
+        default: true
+      run_sdk_python:
+        description: "Run Python SDK pytest (ubuntu)"
+        type: boolean
+        default: true
+      run_sdk_typescript:
+        description: "Run TypeScript SDK vitest (ubuntu)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "1"
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test-windows:
+    name: Test - windows-latest
+    if: ${{ inputs.run_test_windows }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-windows"
+
+      - name: Run full workspace tests
+        run: cargo test --workspace
+
+  enclave-windows:
+    name: Enclave crypto - windows-latest
+    if: ${{ inputs.run_enclave_windows }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-windows"
+
+      - name: Enclave tests (IPC + remote attestation)
+        run: |
+          cargo test --features enclave -p ectoledger --lib -- enclave::ipc::tests
+          cargo test --features enclave -p ectoledger --test enclave_ipc
+          cargo test --features enclave-remote -p ectoledger --lib -- enclave::remote::tests
+
+  integration-test:
+    name: Integration tests
+    if: ${{ inputs.run_integration }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Deliberately independent of every other job. A job that `needs:` a
+    # skipped job is itself skipped, so any dependency here would mean
+    # unchecking one toggle silently disables another.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-ubuntu"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libssl-dev libgtk-3-dev
+
+      - name: Build host binary
+        run: cargo build -p ectoledger --features sandbox
+
+      - name: Run integration test script
+        run: bash scripts/test-integration.sh
+        timeout-minutes: 10
+
+  gui:
+    name: GUI build & check
+    if: ${{ inputs.run_gui }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        working-directory: ${{ github.workspace }}
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Svelte check + Vite build
+        run: |
+          npx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+          npm run test:unit
+          npx vite build
+
+  sdk-python:
+    name: Python SDK
+    if: ${{ inputs.run_sdk_python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-ubuntu"
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libssl-dev libgtk-3-dev
+        working-directory: ${{ github.workspace }}
+
+      - name: Build IronVise binary
+        run: cargo build -p ectoledger --features sandbox
+        working-directory: ${{ github.workspace }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sdk/python/pyproject.toml
+
+      - name: Install SDK with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: python -m pytest tests/ -v --tb=short
+        env:
+          ECTOLEDGER_BINARY: ${{ github.workspace }}/target/debug/ironvise
+
+  sdk-typescript:
+    name: TypeScript SDK
+    if: ${{ inputs.run_sdk_typescript }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck + test
+        run: |
+          npx tsc --noEmit
+          npx vitest run
+          npm run test:pack

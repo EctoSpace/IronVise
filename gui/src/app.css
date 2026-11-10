@@ -1,56 +1,80 @@
 @import "tailwindcss";
 
-/* ─── EctoLedger Enterprise Design System ─────────────────────────────────── */
-
 @theme {
-  /* ── Color palette ──────────────────────────────────────────────────────── */
-  --color-background:       #0d1117;
-  --color-surface:          #181d25;
-  --color-surface-elevated: #1f2630;
-  --color-border:           #30363d;
-  --color-border-muted:     #21262d;
+  /* A deep ground, and a border base light enough that the /20 to /40
+     tints components draw still read as edges on ordinary displays. */
+  --color-background:       #0b0f14;
+  --color-surface:          #141a21;
+  --color-surface-elevated: #1b222b;
+  --color-border:           #2b3440;
+  --color-border-muted:     #3a4452;
 
-  --color-text-primary:   #e6edf3;
-  --color-text-secondary: #8b949e;
-  --color-text-muted:     #484f58;
+  --color-text-primary:   #e8edf2;
+  /* 8.5:1 on surface. Was #8b949e; secondary copy carried most labels. */
+  --color-text-secondary: #a3adb8;
+  /* Was #484f58, which is 2.28:1 on --color-background: not close to WCAG AA's
+     4.5:1, and it was carrying body copy in Settings. #868f99 clears AA on all
+     three surfaces -- 5.77:1 on background, 5.16:1 on surface, 4.65:1 on
+     surface-elevated. The commonly suggested #7d8590 was rejected: it passes on
+     the background but reaches only 4.08:1 on surface-elevated. */
+  --color-text-muted:     #8f99a4;
+  /* The old value, retained for genuinely decorative text only -- separators,
+     watermarks, anything carrying no information. Never use it for copy a
+     reader is expected to read. */
+  --color-text-decorative: #484f58;
   --color-text-inverse:   #0d1117;
 
-  --color-accent:       #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-accent-muted: rgba(59, 130, 246, 0.12);
-  --color-accent-text:  #93c5fd;
+  --color-accent:       #4f8ef7;
+  --color-accent-hover: #3b7ae6;
+  --color-accent-muted: rgba(79, 142, 247, 0.12);
+  --color-accent-text:  #9ec1ff;
 
   --color-success:       #22c55e;
   --color-success-muted: rgba(34, 197, 94, 0.12);
   --color-warning:       #f59e0b;
   --color-warning-muted: rgba(245, 158, 11, 0.12);
+  /* Orange, one step past warning: high-severity findings and warning
+     events, kept apart from amber (medium, actions). 6.33:1 on
+     surface-elevated, 5.79:1 on its own muted tint. */
+  --color-caution:       #f0883e;
+  --color-caution-muted: rgba(240, 136, 62, 0.12);
   --color-danger:        #ef4444;
   --color-danger-muted:  rgba(239, 68, 68, 0.12);
+  /* Red for text, the way accent-text serves accent. #ef4444 is a fill and
+     border colour: as small text it measures 4.41:1 on surface-elevated tints
+     and 4.00:1 on danger-muted. #f87171 is 5.44:1 on the worst of them. */
+  --color-danger-text:   #f87171;
   --color-info:          #06b6d4;
   --color-info-muted:    rgba(6, 182, 212, 0.12);
 
-  /* ── Typography (Inter via @fontsource-variable/inter) ──────────────────── */
+  /* The Observer's "evidence" event category (ledger findings, hash chain
+     cells) had its own purple literal in ObserverPanel.svelte and
+     Sessions.svelte rather than a token, so the 2026-10-23 light palette had
+     nothing to override. Values unchanged from those literals. */
+  --color-evidence:      #a371f7;
+  --color-evidence-text: #c4a5ff;
+
   --font-sans: "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains MonoVariable", "JetBrains Mono", ui-monospace,
     "SF Mono", Menlo, Consolas, monospace;
 
-  /* ── Radii ──────────────────────────────────────────────────────────────── */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
+  /* Every token was 0px while components asked for rounded-xl / rounded-2xl /
+     rounded-full throughout, so every card, button, input and badge rendered as
+     a hard rectangle while the source read as rounded. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
 
-  /* ── Shadows ────────────────────────────────────────────────────────────── */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(59, 130, 246, 0.04);
   --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(59, 130, 246, 0.04);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(59, 130, 246, 0.06);
 
-  /* ── Animations ─────────────────────────────────────────────────────────── */
   --animate-fade-in:     fade-in 0.18s ease-out;
   --animate-slide-up:    slide-up 0.22s ease-out;
   --animate-pulse-gentle: pulse-gentle 2s infinite;
@@ -60,14 +84,131 @@
 @keyframes slide-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse-gentle { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
 
-/* ─── Base ───────────────────────────────────────────────────────────────── */
+/* 2026-10-23 pass: light palette, selected by `data-theme="light"` on <html>.
+   `src/lib/stores/theme.ts` resolves the "system" preference and sets that
+   attribute before Svelte mounts; `public/theme-boot.js` sets it even earlier
+   (before any CSS or JS module executes) so there is no flash. Dark, above,
+   stays the default: an existing user on a dark OS sees no change, and the
+   Playwright visual baseline (which pins `colorScheme: "dark"`) keeps passing
+   unchanged.
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  /* Prevent flex/grid children from overflowing their containers */
-  min-width: 0;
+   Every text token below is measured with the same relative-luminance ratio
+   WCAG 1.4.3 AA defines (4.5:1 for body text), against the *least* contrasting
+   of the three surfaces it can sit on -- here that is --color-background, the
+   darkest of the three light surfaces (surface and surface-elevated are both
+   lighter, so they measure higher). Status colours such as --color-success
+   are included because several screens use them directly as body text
+   (`text-success`, `text-warning`, ...), not only inside their `-muted` fills,
+   so the base tones below are already the readable ones; dark mode kept a
+   separate `-text` variant for this because its saturated fill colours were
+   not readable as text, but the light equivalents are dark enough to serve
+   both jobs and the split would just be two names for one value. */
+:root[data-theme="light"] {
+  --color-background:       #eef1f5;
+  --color-surface:          #f8fafc;
+  --color-surface-elevated: #ffffff;
+  /* Full-strength only (scrollbar thumb, Badge's default border): 1.61:1 on
+     white, a visible hairline without looking like a rule. */
+  --color-border:           #c4cdd7;
+  /* Almost every border in the app is this token at 10-60% opacity
+     (`border-border-muted/10` .. `/60`), so it has to read even at the
+     faintest of those: 1.10:1 on white at 10% opacity, about the same
+     faintness as dark mode's equivalent tint on its background (1.07:1 at
+     15%). At full strength (Select's dropdown border) it measures 3.31:1 on
+     white, clearing the 3:1 WCAG 1.4.11 non-text threshold for a control
+     whose only other edge cue is the focus ring. */
+  --color-border-muted:     #7e8fa3;
+
+  /* 18.2:1 on surface-elevated, 16.0:1 on background. */
+  --color-text-primary:   #12161c;
+  /* 9.2:1 on surface, 8.5:1 on background -- matched to dark mode's
+     secondary ratio (8.5:1 on surface) on purpose. */
+  --color-text-secondary: #3b4654;
+  /* 5.7:1 on surface, 5.25:1 on background: clears AA with headroom similar
+     to dark mode's muted token (4.65-5.77:1), not shaved to the line. */
+  --color-text-muted:     #596573;
+  /* Decorative only, like dark mode's equivalent -- 2.59:1 on background,
+     deliberately below AA. Never use for copy a reader is expected to read. */
+  --color-text-decorative: #8d98a5;
+  /* Text on a saturated fill (buttons, the disconnect banner). Dark mode's
+     text-inverse is near-black for its pale fills; light mode's fills
+     (below) are dark enough that the inverse direction is white. */
+  --color-text-inverse:   #ffffff;
+
+  /* 7.37:1 on background, 8.35:1 on white, as text/links; white text on it
+     (buttons, the SetupWizard step dot) also measures 8.35:1. accent-text is
+     the same value: unlike dark mode's pale accent-text, this blue is dark
+     enough to read as text on its own, so a second, lighter value would buy
+     nothing.
+
+     This is darker than the 4.5:1 floor on purpose: these status colours
+     also sit on their own `-muted` tint (e.g. `bg-accent/15`), which is a
+     *lighter* background than --color-background, and axe's rendered-DOM
+     check measured that composite at 4.43:1 -- under AA -- when the base
+     colour was only tuned to 4.5 against the flat surfaces. The ~7:1 here
+     keeps the same text comfortably over AA on both. */
+  --color-accent:       #0a4d96;
+  --color-accent-hover: #073a73;
+  --color-accent-muted: rgba(10, 77, 150, 0.12);
+  --color-accent-text:  #0a4d96;
+
+  /* 7.37:1 on background, 8.35:1 on white -- see the accent comment above
+     for why this is darker than the 4.5:1 floor. */
+  --color-success:       #125a26;
+  --color-success-muted: rgba(18, 90, 38, 0.12);
+  /* 7.16:1 on background, 8.11:1 on white. Reads as a dark bronze/amber
+     rather than a bright one -- the same headroom amber needs to still clear
+     AA on its own `-muted` tint, the way axe caught for danger below. */
+  --color-warning:        #6e4800;
+  --color-warning-muted:  rgba(110, 72, 0, 0.12);
+  /* Burnt orange, apart from warning's bronze by hue: 6.68:1 on
+     background, 7.57:1 on white, 5.55:1 on its own muted tint. */
+  --color-caution:        #8f3a00;
+  --color-caution-muted:  rgba(143, 58, 0, 0.12);
+  /* 7.31:1 on background, 8.29:1 on white; white text on it (the disconnect
+     banner) also measures 8.29:1. Darker than the original 4.73/5.36:1 pass:
+     `bg-danger-muted` nested under a card (effectively tinting
+     --color-background, not white) measured 4.22:1 as rendered -- caught by
+     an ad hoc axe-core pass over every screen in both themes, not by the
+     flat-surface numbers alone. */
+  --color-danger:        #9c1420;
+  --color-danger-muted:  rgba(156, 20, 32, 0.12);
+  --color-danger-text:   #9c1420;
+  /* 6.94:1 on background, 7.86:1 on white. */
+  --color-info:          #085a68;
+  --color-info-muted:    rgba(8, 90, 104, 0.12);
+
+  /* 7.26:1 on background, 8.23:1 on white, as text (Sessions' "evidence"
+     label). The border/dot use is brighter since it is not held to a text
+     ratio. */
+  --color-evidence:      #8f5fe8;
+  --color-evidence-text: #622fb0;
+
+  /* Light-theme shadows read darker per unit of alpha against a white page
+     than the same alpha does against a dark one, so every stop here is
+     lower than its dark-mode counterpart, not just recoloured. */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.03);
+  --shadow-lg: 0 8px 28px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(15, 23, 42, 0.03);
+  --shadow-xl: 0 16px 48px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+
+  color-scheme: light;
+}
+
+/* This reset must sit in the base layer. Tailwind 4 emits utilities inside
+   `@layer utilities`, and any unlayered rule outranks every layered one
+   whatever its specificity -- so while this block was unlayered it zeroed
+   every p-*, m-*, gap-free spacing and min-w-* utility in the app. Cards,
+   buttons and the sidebar all rendered flush against their edges. */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* Prevent flex/grid children from overflowing their containers */
+    min-width: 0;
+  }
 }
 
 :root {
@@ -84,27 +225,38 @@
   -webkit-font-smoothing: antialiased;
   /* Inter OpenType features: contextual alternates, slashed zero */
   font-feature-settings: "calt" 1, "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1, "zero" 1;
-  /* Prevent long hashes, JWTs, and URLs from causing horizontal overflow */
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* Wrap long words only when they would overflow. This was `anywhere` (plus
+     the deprecated `word-break: break-word`, which means the same thing), and
+     `anywhere` also shrinks every element's min-content width to one letter:
+     squeezed labels broke mid-word ("St / at / us", "compl / eted"). */
+  overflow-wrap: break-word;
+}
+
+/* Hashes, JWTs, keys and URLs have no spaces to wrap at; these may break
+   anywhere so they never push a panel wider than the window. */
+@layer base {
+  code, pre, kbd, samp, .font-mono {
+    overflow-wrap: anywhere;
+  }
 }
 
 html, body, #app { height: 100%; width: 100%; overflow: hidden; }
 
-/* ── Selection colour — brand consistency ─────────────────────────────────── */
 ::selection {
   background: rgba(59, 130, 246, 0.3);
   color: var(--color-text-primary);
 }
 
-/* ── Focus-visible — keyboard accessibility for enterprise compliance ─────── */
-*:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
+/* Layered for the same reason as the reset: unlayered, the 4px radius replaced
+   rounded-xl on every button the moment it took keyboard focus. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
-/* ── Smooth transitions on interactive elements ───────────────────────────── */
 button, a, input, select, textarea {
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -119,3 +271,47 @@ button, a, input, select, textarea {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* The open list of a native <select> is drawn by the OS. On Windows
+   (WebView2) its options inherited the app's light text but kept the
+   system's light-grey background: white on light grey, nearly unreadable
+   (reported 2026-10-08). Every select and its options get the app's surface
+   and text colour explicitly; placeholders ("Choose a model") are muted.
+   Unlayered so a translucent utility on one select cannot undo it.
+   `color-scheme: inherit` (added 2026-10-23) tracks :root's resolved scheme
+   instead of forcing dark, so the OS-drawn parts of the control (scrollbar,
+   Windows' own highlight colours) follow the light palette too; the explicit
+   colours above are what actually fixed the original bug and are unchanged. */
+select {
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  color-scheme: inherit;
+  /* Drawn, not native: WebKit (the macOS window) otherwise renders a small
+     system pop-up button that ignores the padding and radius every other
+     field has. The chevron is muted text in each palette. */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238f99a4'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 12px 12px;
+  padding-right: 2.75rem;
+}
+:root[data-theme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23596573'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E");
+}
+select option,
+select optgroup {
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+}
+select option:disabled {
+  color: var(--color-text-muted);
+}
+select option:checked {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent-text);
+}
+select:disabled {
+  color: var(--color-text-muted);
+}

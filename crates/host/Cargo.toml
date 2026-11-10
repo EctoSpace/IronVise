@@ -3,18 +3,19 @@ name = "ectoledger"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "State-first, cryptographically verified agent framework for automated security auditing"
+description = "IronVise: state-first, cryptographically verified agent framework for automated security auditing"
 license.workspace = true
 build = "build.rs"
 # default binary so `cargo run -p ectoledger` doesn't need `--bin`
-default-run = "ectoledger"
+default-run = "ironvise"
+autobins = false
 
 [lib]
 name = "ectoledger"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ectoledger"
+name = "ironvise"
 path = "src/main.rs"
 
 [[bin]]
@@ -31,9 +32,12 @@ ectoledger-sandbox = { workspace = true }
 ectoledger-llm     = { workspace = true }
 ectoledger-compliance = { workspace = true }
 
-pg-embed           = { version = "0.7", default-features = false, features = ["rt_tokio"] }
+pg-embed           = { version = "1", default-features = false, features = ["rt_tokio"] }
 tokio              = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "process"] }
-sqlx               = { version = "0.8", features = ["runtime-tokio", "postgres", "sqlite", "chrono", "uuid", "json", "migrate"] }
+# `sqlite-unlock-notify` lets a writer wait out a shared-cache table lock (the
+# in-memory ledger) instead of failing; `sqlite` would also enable extension
+# loading, which nothing here needs.
+sqlx               = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "sqlite-bundled", "sqlite-unlock-notify", "chrono", "uuid", "json", "migrate", "macros"] }
 reqwest            = { version = "0.13", features = ["json", "blocking"] }
 serde              = { workspace = true }
 serde_json         = { workspace = true }
@@ -46,70 +50,63 @@ url                = { workspace = true }
 ipnetwork          = { workspace = true }
 tracing            = { workspace = true }
 ed25519-dalek      = { workspace = true }
+ectoledger-elc     = { path = "../elc" }
 regex-lite         = { workspace = true }
 dotenvy            = "0.15"
 ledger-api         = { path = "../ledger-api" }
-thiserror          = "1"
+thiserror          = { workspace = true }
 axum               = { version = "0.8", features = ["json"] }
-tower-http         = { version = "0.6", features = ["fs", "cors"] }
+tower-http         = { version = "0.7", features = ["fs", "cors"] }
 tokio-stream       = { version = "0.1", features = ["time"] }
 async-stream       = "0.3"
 futures-util       = "0.3"
 clap               = { version = "4", features = ["derive"] }
-shlex              = "1"
+shlex              = "2"
 async-trait        = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower_governor     = "0.8"
 unicode-normalization = "0.1"
-rand               = "0.8"
-colored            = "2"
+rand               = "0.10"
+colored            = "3"
 libc               = "0.2"
-hmac               = "0.12"
-base64             = "0.22"
-argon2             = "0.5"
-aes-gcm            = "0.10"
+hmac               = "0.13"
+base64             = "0.23"
+argon2             = "0.6"
+aes-gcm            = "0.11"
 rpassword          = "7"
 tempfile           = "3"
 subtle             = "2"
-which              = "7"
+which              = "8"
 bs58               = "0.5"
 tokio-util         = { version = "0.7", features = ["rt"] }
-x25519-dalek       = { version = "2", features = ["static_secrets"], optional = true }
-chacha20poly1305   = { version = "0.10", optional = true }
-hkdf               = { version = "0.12", optional = true }
+x25519-dalek       = { version = "3", features = ["static_secrets"], optional = true }
+chacha20poly1305   = { version = "0.11", optional = true }
+hkdf               = { version = "0.13", optional = true }
 zeroize            = "1"
 
 # --- Optional remote enclave attestation deps (feature-gated) ---
 coset              = { version = "0.3", optional = true }
 ciborium           = { version = "0.2", optional = true }
+# Nitro attestation document chain verification: parsing only (default
+# features; never the `verify`/`verify-aws` feature, which pulls in `ring`).
+x509-parser        = { version = "0.18", optional = true }
+# ECDSA P-384, the curve the Nitro attestation PKI signs with: the same
+# RustCrypto generation (`ecdsa` 0.17, `der` 0.8) as `p256` and `k256`.
+p384               = { version = "0.14", optional = true, features = ["ecdsa"] }
 
-# --- Optional ZK dependencies (feature-gated) ---
-sp1-sdk   = { version = "6.0.1", optional = true }
-bincode   = { version = "1", optional = true }
-
-# --- Optional EVM anchoring dependencies (feature-gated) ---
-k256      = { version = "0.13", optional = true, features = ["ecdsa"] }
-sha3      = { version = "0.10", optional = true }
-
-# --- Optional ECDSA P-256 VC signing (feature-gated) ---
-p256      = { version = "0.13", optional = true, features = ["ecdsa"] }
-
-# --- Optional BLAKE3 hash algorithm (TM-6b, feature-gated) ---
-blake3    = { version = "1", optional = true }
-
-# --- Optional OS keychain integration (TM-3g, feature-gated) ---
-keyring   = { version = "3", optional = true }
+# Only for `sqlcipher`: unifies with sqlx's copy to swap SQLite for SQLCipher.
+libsqlite3-sys = { version = "0.39", optional = true, features = ["bundled-sqlcipher"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock    = { version = "0.4", optional = true }
-seccompiler = { version = "0.4", optional = true }
+seccompiler = { version = "0.5", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 applevisor = { version = "1.0", optional = true }
 applevisor-sys = { version = "1.0", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_System_JobObjects",
     "Win32_System_Memory",
     "Win32_System_Threading",
@@ -119,13 +116,27 @@ windows = { version = "0.58", features = [
 
 [build-dependencies]
 image    = { version = "0.25", features = ["png"] }
-ico      = "0.5"
+ico      = "0.6"
 winres   = "0.1"
-sp1-build = { version = "6.0.1", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
-serial_test = "3"
+proptest = { workspace = true }
+serial_test = "4"
+# Test-only fixture generation for nitro_attestation: builds P-384 test CA /
+# leaf certificates. Cargo has no "optional dev-dependency", so this is
+# always part of the test build graph; it is never part of a release
+# binary, and the code that uses it is `#[cfg(test)] #[cfg(feature =
+# "enclave-remote")]` regardless. `pkcs8` (unioned onto the main `p384` dep
+# above for test builds only) is needed for `EncodePublicKey`, which
+# `x509_cert::builder::CertificateBuilder` requires of the signer's key type.
+x509-cert = { version = "0.3", features = ["builder"] }
+p384 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+# `oid` gives `Sha384` an `AssociatedOid` impl, which `x509_cert::builder`
+# needs to write the certificate's `ecdsa-with-SHA384` AlgorithmIdentifier.
+# Purely additive (extra trait impls only); unions onto the plain `sha2`
+# dependency above for test builds, never for a release binary.
+sha2 = { version = "0.11", features = ["oid"] }
 
 [features]
 # `sandbox` enables Linux-specific Landlock LSM + seccomp-BPF syscall filtering.
@@ -135,8 +146,7 @@ serial_test = "3"
 #           unavailable at runtime, the sandbox gracefully falls back to advisory
 #           tripwires so that no platform-specific dependency breaks the build
 #           on another platform.
-# `evm`     enables EVM chain anchoring (k256 ECDSA + Keccak256 hashing).
-default     = ["sandbox", "evm"]
+default     = ["sandbox"]
 # Embed Windows icon / version-info resource into this crate's binaries.
 # Disabled by default so that downstream crates with their own resource
 # (e.g. ectoledger-gui via tauri_build) do not conflict at link time.
@@ -149,21 +159,20 @@ sandbox = ["dep:landlock", "dep:seccompiler"]
 # Enable with: cargo build --features sandbox-firecracker
 sandbox-firecracker = []
 integration = []
-zk          = ["dep:sp1-sdk", "dep:bincode", "dep:sp1-build"]
-evm         = ["dep:k256", "dep:sha3"]
 # ECDSA P-256 VC signing scheme alongside the default Ed25519 (EdDSA) scheme.
-vc-ecdsa    = ["dep:p256"]
-enclave-remote = ["enclave", "dep:coset", "dep:ciborium"]
-# SQLCipher at-rest encryption for the SQLite backend (TM-1d).
-# Requires linking against a SQLCipher-enabled SQLite library. When enabled,
-# set ECTOLEDGER_SQLCIPHER_KEY to the database encryption passphrase.
-sqlcipher   = []
-# BLAKE3 as an alternative/stronger hash algorithm (TM-6b).
+vc-ecdsa    = ["ectoledger-compliance/vc-ecdsa"]
+enclave-remote = ["enclave", "dep:coset", "dep:ciborium", "dep:x509-parser", "dep:p384"]
+# SQLCipher at-rest encryption for the SQLite backend. Builds
+# SQLCipher in place of SQLite (the same libsqlite3-sys sqlx uses), linking
+# the system libcrypto: OpenSSL development files are needed at build time.
+# Set ECTOLEDGER_SQLCIPHER_KEY to the database encryption passphrase.
+sqlcipher   = ["dep:libsqlite3-sys"]
+# BLAKE3 as an alternative/stronger hash algorithm.
 # When enabled, new events use BLAKE3 instead of SHA-256; verification
 # falls back to SHA-256 for events created before the migration.
-hash-blake3 = ["dep:blake3"]
-# OS keychain integration for signing-key storage (TM-3g).
-# When enabled, the Ed25519 signing key can be stored in the platform
-# keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-# instead of an encrypted file on disk.
-keychain    = ["dep:keyring"]
+#
+# The gated code lives in ectoledger_core::hash, so this must forward there.
+# Declaring only `dep:blake3` pulled the crate in and changed nothing: the
+# feature was on, the comment above said BLAKE3 was in use, and hashing
+# stayed on SHA-256.
+hash-blake3 = ["ectoledger_core/hash-blake3"]

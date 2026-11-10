@@ -3,13 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Features | EctoLedger</title>
-  <meta name="description" content="Comprehensive feature overview of EctoLedger: guardrails, audit evidence, compliance controls, SDKs, sandboxing, and deployment architecture." />
-  <meta property="og:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta property="og:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta name="twitter:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
+  <title>Features | IronVise</title>
+  <meta name="description" content="Comprehensive feature overview of IronVise: guardrails, audit evidence, compliance controls, SDKs, sandboxing, and deployment architecture." />
   <link rel="icon" href="images/ectoSpace-Logo.webp" type="image/webp" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -86,6 +81,7 @@
           <a href="features.html" aria-current="page" class="text-white transition-colors hover:text-white">Features</a>
           <a href="changelog.html" class="transition-colors hover:text-white">Changelog</a>
           <a href="demo.html" class="transition-colors hover:text-white">Demo</a>
+          <a href="verify.html" class="transition-colors hover:text-white">Verify</a>
         </nav>
         <div class="flex items-center gap-2">
           <a
@@ -121,6 +117,7 @@
           <a href="features.html" aria-current="page" class="rounded-lg bg-white/[0.06] px-3 py-2 text-white transition-colors hover:bg-white/[0.08]">Features</a>
           <a href="changelog.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Changelog</a>
           <a href="demo.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Demo</a>
+          <a href="verify.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Verify</a>
         </div>
       </nav>
     </header>
@@ -131,7 +128,7 @@
           <p class="reveal font-mono text-xs uppercase tracking-[0.22em] text-brand-300">Full capability map</p>
           <h1 class="reveal mt-4 font-display text-4xl tracking-tight sm:text-5xl lg:text-6xl">Features</h1>
           <p class="reveal mt-4 text-zinc-300">
-            A comprehensive list of what EctoLedger offers across security enforcement, audit evidence, governance, SDKs, deployment, and architecture.
+            A comprehensive list of what IronVise offers across security enforcement, audit evidence, governance, SDKs, deployment, and architecture.
           </p>
         </div>
         <div id="subnav-sentinel" aria-hidden="true" class="h-px w-full"></div>
@@ -167,7 +164,7 @@
       <section id="not-for" class="scroll-mt-28 pb-12 sm:pb-16">
         <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8 border-l-4 border-brand-400/60">
-            <p class="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">What EctoLedger is not</p>
+            <p class="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">What IronVise is not</p>
             <h2 class="mt-3 font-display text-2xl sm:text-3xl tracking-tight text-white">Clear boundaries</h2>
             <ul class="mt-5 space-y-2 text-sm text-zinc-300">
               <li>It is <strong class="text-white">not</strong> a crypto trading product or asset management platform.</li>
@@ -182,7 +179,7 @@
         <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8 border-l-4 border-aqua-400/60">
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Use Cases by Team</p>
-            <h2 class="mt-3 font-display text-2xl sm:text-3xl tracking-tight text-white">How organizations use EctoLedger</h2>
+            <h2 class="mt-3 font-display text-2xl sm:text-3xl tracking-tight text-white">How organizations use IronVise</h2>
             <div class="mt-6 grid gap-4 md:grid-cols-2">
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 class="font-display text-lg text-white">Security</h3>
@@ -194,7 +191,7 @@
               </article>
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 class="font-display text-lg text-white">Platform Engineering</h3>
-                <p class="mt-2 text-sm text-zinc-300">Operate agent workflows with enforceable controls, approval gates, and replayable execution history.</p>
+                <p class="mt-2 text-sm text-zinc-300">Operate agent workflows with policy checks, approval gates, and replayable execution history. The Claude Code hook can deny; the recording proxy observes only.</p>
               </article>
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                 <h3 class="font-display text-lg text-white">Audit and Procurement</h3>
@@ -244,7 +241,7 @@
                     <td class="px-4 py-3">Yes</td>
                   </tr>
                   <tr class="border-b border-white/10">
-                    <td class="px-4 py-3">`.elc` certificate export + offline verification</td>
+                    <td class="px-4 py-3"><code class="font-mono text-xs">.elc</code> certificate export + offline verification</td>
                     <td class="px-4 py-3">Yes</td>
                     <td class="px-4 py-3">Yes</td>
                     <td class="px-4 py-3">Yes</td>
@@ -263,9 +260,9 @@
                   </tr>
                   <tr>
                     <td class="px-4 py-3">Platform key storage integration</td>
-                    <td class="px-4 py-3">macOS Keychain (optional feature)</td>
-                    <td class="px-4 py-3">Secret Service (optional feature)</td>
-                    <td class="px-4 py-3">Credential Manager (optional feature)</td>
+                    <td class="px-4 py-3">macOS Keychain (built in)</td>
+                    <td class="px-4 py-3">Secret Service (built in)</td>
+                    <td class="px-4 py-3">Credential Manager (built in)</td>
                   </tr>
                 </tbody>
               </table>
@@ -277,8 +274,8 @@
                 <ul class="mt-2 space-y-1.5 text-sm text-zinc-300">
                   <li>Native desktop app with full control/evidence pipeline.</li>
                   <li>Seatbelt sandbox integration for process constraints.</li>
-                  <li>Apple Hypervisor guard unikernel path via `sandbox-apple-enclave` feature.</li>
-                  <li>Optional key storage integration with macOS Keychain.</li>
+                  <li>Apple Hypervisor guard unikernel path via <code class="font-mono text-xs">sandbox-apple-enclave</code> feature.</li>
+                  <li>API keys entered in Settings are stored in the macOS Keychain, never in settings.json.</li>
                 </ul>
               </article>
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
@@ -286,8 +283,8 @@
                 <ul class="mt-2 space-y-1.5 text-sm text-zinc-300">
                   <li>Native CLI + GUI with full verification and evidence flow.</li>
                   <li>Landlock + seccomp sandbox controls in supported environments.</li>
-                  <li>Firecracker microVM execution isolation path via `sandbox-firecracker`.</li>
-                  <li>Optional Secret Service key storage integration.</li>
+                  <li>Firecracker microVM execution isolation path via <code class="font-mono text-xs">sandbox-firecracker</code>.</li>
+                  <li>API keys entered in Settings are stored in the Secret Service, never in settings.json.</li>
                 </ul>
               </article>
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
@@ -296,7 +293,7 @@
                   <li>Native CLI + GUI with full pre-execution checks and evidence export.</li>
                   <li>Job Object sandbox integration for process isolation controls.</li>
                   <li>No current hardware microVM execution isolation path.</li>
-                  <li>Optional key storage integration with Credential Manager.</li>
+                  <li>API keys entered in Settings are stored in Credential Manager, never in settings.json.</li>
                 </ul>
               </article>
             </div>
@@ -311,7 +308,7 @@
             <h2 class="mt-3 font-display text-2xl sm:text-3xl tracking-tight text-white">Controls that block unsafe AI actions before execution</h2>
             <ul class="mt-5 space-y-2 text-sm text-zinc-300">
               <li><strong class="text-white">Verify-before-commit enforcement</strong> - AI-generated actions are validated before they can run, rather than trusted by default.</li>
-              <li><strong class="text-white">4-layer semantic guardrail pipeline</strong> - Policy checks, dual-LLM guard, strict schema validation, and Tripwire must all pass before action execution.</li>
+              <li><strong class="text-white">4-layer pre-execution checks</strong> - Policy checks, strict schema validation and Tripwire must pass before an action runs; the dual-LLM semantic guard adds a fourth layer once turned on and configured.</li>
               <li><strong class="text-white">Tripwire execution boundaries</strong> - Enforces filesystem, domain, command, and request-safety rules to reduce prompt injection and exfiltration risk.</li>
               <li><strong class="text-white">Human approval gates</strong> - Policy-triggered actions can pause for operator approval before continuing execution.</li>
               <li><strong class="text-white">Adversarial testing support</strong> - Built-in red-team and testing surfaces validate guard behavior against hostile input patterns.</li>
@@ -327,10 +324,10 @@
             <h2 class="mt-3 font-display text-2xl sm:text-3xl tracking-tight text-white">Provable evidence, not screenshots and trust</h2>
             <ul class="mt-5 space-y-2 text-sm text-zinc-300">
               <li><strong class="text-white">Tamper-evident audit ledger</strong> - Every event is append-only and hash-chained for forensic integrity.</li>
-              <li><strong class="text-white">Cryptographic audit certificates (.elc)</strong> - Exportable artifacts can be verified offline with the `verify-cert` binary.</li>
+              <li><strong class="text-white">Cryptographic audit certificates (.elc)</strong> - Exportable artifacts can be verified offline with the <code class="font-mono text-xs">verify-cert</code> binary.</li>
               <li><strong class="text-white">Session transparency</strong> - Shows attempted actions, approved actions, blocked actions, and final outcomes.</li>
               <li><strong class="text-white">W3C verifiable credential support</strong> - Session-level credential issuance and verification endpoints for portable attestations.</li>
-              <li><strong class="text-white">Policy and compliance packs</strong> - Built-in policy packs for SOC 2, PCI-DSS, OWASP Top 10, and ISO 42001 control mapping.</li>
+              <li><strong class="text-white">Policy and compliance packs</strong> - Built-in rule packs for SOC 2, PCI-DSS and OWASP Top 10, and an ISO 42001 control mapping.</li>
             </ul>
           </div>
         </div>
@@ -377,8 +374,8 @@
               <li><strong class="text-white">Rust security core</strong> - Memory-safe, high-performance host runtime and cryptographic primitives.</li>
               <li><strong class="text-white">Deterministic policy execution path</strong> - Explicit rule engine and structured output validation reduce ambiguity in agent behavior.</li>
               <li><strong class="text-white">Optional sandbox isolation modes</strong> - Supports higher-isolation execution paths including Firecracker-based workflows where available.</li>
-              <li><strong class="text-white">Anchoring and proof extensions</strong> - Supports timestamp and chain anchoring workflows and optional zk-proof generation flows.</li>
-              <li><strong class="text-white">Open-source transparency</strong> - Public source enables independent review by security and compliance teams.</li>
+              <li><strong class="text-white">Anchoring and proof extensions</strong> - Supports timestamp anchoring workflows. SP1 proof generation is unavailable in 0.8.</li>
+              <li><strong class="text-white">Source-available transparency</strong> - Published under BUSL-1.1, so security and compliance teams can read and review every line. Verification is explicitly carved out as permitted use for any purpose, including commercial; production use of the server needs a licence.</li>
             </ul>
           </div>
         </div>
@@ -406,9 +403,9 @@
       <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
         <div class="glass flex flex-col items-center justify-between gap-4 rounded-2xl px-6 py-5 text-sm text-zinc-400 md:flex-row">
           <div class="flex items-center gap-2">
-            <img src="images/el-logo.webp" alt="EctoSpace" class="h-7 w-auto max-w-[100px] object-contain" />
+            <img src="images/ironvise-mark.webp" alt="IronVise" class="h-7 w-auto max-w-[100px] object-contain" />
             <span class="text-zinc-500">·</span>
-            <span>EctoLedger</span>
+            <span>IronVise</span>
           </div>
           <p>&copy; 2026 EctoSpace</p>
         </div>

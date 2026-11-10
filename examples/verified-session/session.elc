@@ -1,0 +1,33 @@
+{
+  "completed_at": "2026-09-16T15:07:35.035202821+00:00",
+  "event_count": 4,
+  "events": [
+    {
+      "content_hash": "75f3fe1a08d1ac319a0af667e4a659812c945ad34793a9fd3d3ff1c8de3b851e",
+      "sequence": 1
+    },
+    {
+      "content_hash": "702b91091a1591d44ea4967e1431a4c384dcb16934f5749ec145f5d1d0a00484",
+      "sequence": 2
+    },
+    {
+      "content_hash": "06d48a634b47d7665fd1fa16324205ced053175c8a78553453c9a6789e7984db",
+      "sequence": 3
+    },
+    {
+      "content_hash": "3934967d00271231b35fd55126f15f479fd6e9d5cf86fa2503b8ced27872326d",
+      "sequence": 4
+    }
+  ],
+  "findings": [],
+  "goal": "Claude Code session in /workspace/ectoledger-example",
+  "goal_hash": "0ab637942f9d63f40a6d54c104467dc02c4585ea4ddafae7bc6962e3c9b78c57",
+  "ledger_tip_hash": "3934967d00271231b35fd55126f15f479fd6e9d5cf86fa2503b8ced27872326d",
+  "merkle_root": "13c4025fcaa5dc32a7c1245840340074bd0e3e100103b271fbf1476093a568f8",
+  "ots_proof_hex": "f008cd8eee4a5951b06c08f120a734e5cfb7ee95576132fb95ab4eb03e5a4024cd075d35168f2ab4244e1b351208f0102747d2d9f10aafa74be4224194c1a0e808f120ed116909fabdb5ecb983ed7a67ff82eefdd1c4806659ae5fe5070fb1accdd30b08f1207a64915f751f9d41651afd9bc9ca801a3da992f663f43baba4cffa869900ed5308f1046aaab0b7f008fff5ecfb6f22d0540083dfe30d2ef90c8e2e2d68747470733a2f2f616c6963652e6274632e63616c656e6461722e6f70656e74696d657374616d70732e6f7267",
+  "session_id": "26ece9fa-2486-44c2-81fd-907ebd955f87",
+  "session_public_key": "374ef79f4035fcbb6bd81bdc6e77d937099c80675f4f772c59be57109bc88fd2",
+  "signature": "ba8d6122d81675a173f375758fc6e2d760e8a89e80df1227adee216021b779fe401c63352df31ebf1442d319c02b70fd5d7447afa57e607cc630e40337986706",
+  "started_at": "2026-09-16T15:07:35.011839047+00:00",
+  "version": 1
+}

@@ -39,8 +39,6 @@ use crate::tripwire::TripwireError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// ── Rule model ────────────────────────────────────────────────────────────────
-
 /// A single rollback rule loaded from the rules TOML file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RollbackRule {
@@ -65,8 +63,6 @@ struct RollbackRulesFile {
     rules: Vec<RollbackRule>,
 }
 
-// ── Planner ───────────────────────────────────────────────────────────────────
-
 /// Matches a rejected intent against a set of rollback rules and returns the
 /// compensating `ProposedIntent` if a rule matches.
 #[derive(Debug, Clone, Default)]
@@ -76,7 +72,7 @@ pub struct CompensationPlanner {
 
 impl CompensationPlanner {
     /// Load rules from the configured path.  Returns an empty planner if the
-    /// file does not exist (silent — not all deployments need compensation rules).
+    /// file does not exist (silent - not all deployments need compensation rules).
     pub fn load() -> Self {
         let path = config::rollback_rules_path();
         if !path.exists() {
@@ -167,8 +163,6 @@ pub struct CompensatingAction {
     pub error_kind: String,
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 fn tripwire_error_kind(e: &TripwireError) -> &'static str {
     match e {
         TripwireError::UnknownAction(_) => "UnknownAction",
@@ -177,6 +171,9 @@ fn tripwire_error_kind(e: &TripwireError) -> &'static str {
         TripwireError::PathTraversal(_) => "PathTraversal",
         TripwireError::InvalidPath(_) => "InvalidPath",
         TripwireError::PathNotAllowed(_) => "PathNotAllowed",
+        TripwireError::ProtectedPath(_) => "ProtectedPath",
+        TripwireError::InvalidMcpTool(_) => "InvalidMcpTool",
+        TripwireError::McpToolNotAllowed(_) => "McpToolNotAllowed",
         TripwireError::SymlinkEscape(_) => "SymlinkEscape",
         TripwireError::PolicyViolation(_) => "PolicyViolation",
         TripwireError::InvalidUrl(_) => "InvalidUrl",
@@ -213,7 +210,7 @@ fn expand_str(template: &str, params: &serde_json::Value) -> String {
     if let Some(obj) = params.as_object() {
         let mut out = template.to_string();
         for (k, v) in obj {
-            let placeholder = format!("{{{{params.{}}}}}", k);
+            let placeholder = format!("{{{{params.{k}}}}}");
             let value_str = match v {
                 serde_json::Value::String(s) => sanitize_template_value(s),
                 other => sanitize_template_value(&other.to_string()),

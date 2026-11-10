@@ -1,0 +1,15 @@
+[package]
+name = "ectoledger-elc-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "The .elc verifier compiled for the browser: a C-ABI wrapper over ectoledger-elc, no wasm-bindgen"
+license.workspace = true
+
+[lib]
+# cdylib is the .wasm; rlib lets the native test suite call the same exports.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ectoledger-elc = { path = "../elc" }
+serde_json     = { workspace = true }

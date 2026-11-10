@@ -1,16 +1,13 @@
-use crate::ledger::{get_dangling_actions, get_events, mark_action_failed};
+use crate::pool::DatabasePool;
 use crate::schema::{RestoredState, SnapshotRow};
-use crate::snapshot::{
-    SnapshotPayload, compute_state_hash, get_latest_snapshot, snapshot_at_sequence,
-};
+use crate::snapshot::{SnapshotPayload, compute_state_hash};
 use serde_json::Value;
-use sqlx::PgPool;
 
 pub async fn replay_after_snapshot(
-    pool: &PgPool,
+    pool: &DatabasePool,
     from_sequence: i64,
 ) -> Result<Vec<crate::schema::LedgerEventRow>, sqlx::Error> {
-    let latest = get_latest(pool).await?;
+    let latest = pool.get_latest().await?;
     let to_sequence = match latest {
         None => return Ok(Vec::new()),
         Some((seq, _)) => seq,
@@ -18,11 +15,7 @@ pub async fn replay_after_snapshot(
     if to_sequence <= from_sequence {
         return Ok(Vec::new());
     }
-    get_events(pool, from_sequence + 1, to_sequence).await
-}
-
-async fn get_latest(pool: &PgPool) -> Result<Option<(i64, String)>, sqlx::Error> {
-    crate::ledger::get_latest(pool).await
+    pool.get_events_range(from_sequence + 1, to_sequence).await
 }
 
 pub fn verify_snapshot_hash(snapshot: &SnapshotRow) -> Result<bool, serde_json::Error> {
@@ -32,10 +25,11 @@ pub fn verify_snapshot_hash(snapshot: &SnapshotRow) -> Result<bool, serde_json::
 }
 
 pub async fn restore_state(
-    pool: &PgPool,
+    pool: &DatabasePool,
     verify_snapshot: bool,
 ) -> Result<RestoredState, WakeUpError> {
-    let snapshot = get_latest_snapshot(pool)
+    let snapshot = pool
+        .get_latest_snapshot()
         .await
         .map_err(WakeUpError::Db)?
         .ok_or(WakeUpError::NoSnapshot)?;
@@ -69,12 +63,11 @@ const ZOMBIE_SESSION_MSG: &str = "Session did not complete (recovered after cras
 /// 2. Marks the session as `"failed"` with `finished_at = now()`.
 ///
 /// Should be called once during process startup, **before** the cognitive loop.
-pub async fn recover_zombie_sessions(pool: &PgPool) -> Result<u64, WakeUpError> {
-    let zombie_ids: Vec<uuid::Uuid> =
-        sqlx::query_scalar("SELECT id FROM agent_sessions WHERE status = 'running'")
-            .fetch_all(pool)
-            .await
-            .map_err(WakeUpError::Db)?;
+pub async fn recover_zombie_sessions(pool: &DatabasePool) -> Result<u64, WakeUpError> {
+    let zombie_ids = pool
+        .list_running_session_ids()
+        .await
+        .map_err(WakeUpError::Db)?;
 
     if zombie_ids.is_empty() {
         return Ok(0);
@@ -83,22 +76,21 @@ pub async fn recover_zombie_sessions(pool: &PgPool) -> Result<u64, WakeUpError> 
     let count = zombie_ids.len() as u64;
     tracing::warn!(
         count,
-        "recover_zombie_sessions: found {} session(s) still in 'running' status — marking failed",
+        "recover_zombie_sessions: found {} session(s) still in 'running' status - marking failed",
         count,
     );
 
     for session_id in &zombie_ids {
-        // Best-effort: append an observation to the ledger for auditability.
-        if let Err(e) = crate::ledger::append_event(
-            pool,
-            crate::schema::EventPayload::Observation {
-                content: format!("{} (session_id: {})", ZOMBIE_SESSION_MSG, session_id),
-            },
-            Some(*session_id),
-            None,
-            None,
-        )
-        .await
+        if let Err(e) = pool
+            .append_event(
+                crate::schema::EventPayload::Observation {
+                    content: format!("{ZOMBIE_SESSION_MSG} (session_id: {session_id})"),
+                },
+                Some(*session_id),
+                None,
+                None,
+            )
+            .await
         {
             tracing::warn!(
                 "recover_zombie_sessions: failed to append observation for session {}: {}",
@@ -107,8 +99,7 @@ pub async fn recover_zombie_sessions(pool: &PgPool) -> Result<u64, WakeUpError> 
             );
         }
 
-        // Mark the session as failed.
-        if let Err(e) = crate::ledger::finish_session(pool, *session_id, "failed").await {
+        if let Err(e) = pool.finish_session(*session_id, "failed").await {
             tracing::warn!(
                 "recover_zombie_sessions: failed to mark session {} as failed: {}",
                 session_id,
@@ -120,19 +111,19 @@ pub async fn recover_zombie_sessions(pool: &PgPool) -> Result<u64, WakeUpError> 
     Ok(count)
 }
 
-pub async fn recover_incomplete_actions(pool: &PgPool) -> Result<(), WakeUpError> {
-    let dangling = get_dangling_actions(pool).await.map_err(WakeUpError::Db)?;
+pub async fn recover_incomplete_actions(pool: &DatabasePool) -> Result<(), WakeUpError> {
+    let dangling = pool.get_dangling_actions().await.map_err(WakeUpError::Db)?;
     for event_id in dangling {
-        if let Err(e) = crate::ledger::append_event(
-            pool,
-            crate::schema::EventPayload::Observation {
-                content: RECOVERED_MSG.to_string(),
-            },
-            None,
-            None,
-            None,
-        )
-        .await
+        if let Err(e) = pool
+            .append_event(
+                crate::schema::EventPayload::Observation {
+                    content: RECOVERED_MSG.to_string(),
+                },
+                None,
+                None,
+                None,
+            )
+            .await
         {
             tracing::warn!(
                 "Recovery: failed to append observation for dangling event {}: {}",
@@ -140,7 +131,7 @@ pub async fn recover_incomplete_actions(pool: &PgPool) -> Result<(), WakeUpError
                 e
             );
         }
-        if let Err(e) = mark_action_failed(pool, event_id, RECOVERED_MSG).await {
+        if let Err(e) = pool.mark_action_failed(event_id, RECOVERED_MSG).await {
             tracing::warn!(
                 "Recovery: failed to mark action {} as failed: {}",
                 event_id,
@@ -151,8 +142,8 @@ pub async fn recover_incomplete_actions(pool: &PgPool) -> Result<(), WakeUpError
     Ok(())
 }
 
-pub async fn restore_state_from_genesis(pool: &PgPool) -> Result<RestoredState, WakeUpError> {
-    let latest = get_latest(pool).await.map_err(WakeUpError::Db)?;
+pub async fn restore_state_from_genesis(pool: &DatabasePool) -> Result<RestoredState, WakeUpError> {
+    let latest = pool.get_latest().await.map_err(WakeUpError::Db)?;
     match latest {
         None => Ok(RestoredState {
             snapshot_sequence: -1,
@@ -160,18 +151,18 @@ pub async fn restore_state_from_genesis(pool: &PgPool) -> Result<RestoredState, 
             replayed_events: Vec::new(),
         }),
         Some((seq, _)) => {
-            let replayed = get_events(pool, 0, seq).await.map_err(WakeUpError::Db)?;
+            let replayed = pool
+                .get_events_range(0, seq)
+                .await
+                .map_err(WakeUpError::Db)?;
 
-            // Persist a checkpoint at the current tip so the next startup does not
-            // repeat this full replay. On conflict (snapshot already exists for this
-            // sequence) we simply skip silently.
-            let snap_result = snapshot_at_sequence(pool, seq).await;
+            let snap_result = pool.snapshot_at_sequence(seq).await;
             let (snapshot_sequence, snapshot_payload) = match snap_result {
                 Ok(row) => (row.sequence, row.payload),
                 Err(crate::snapshot::SnapshotError::Db(ref e))
                     if e.to_string().contains("unique") || e.to_string().contains("duplicate") =>
                 {
-                    let existing = get_latest_snapshot(pool).await.map_err(WakeUpError::Db)?;
+                    let existing = pool.get_latest_snapshot().await.map_err(WakeUpError::Db)?;
                     match existing {
                         Some(row) if row.sequence == seq => (row.sequence, row.payload),
                         _ => (seq, Value::Object(serde_json::Map::new())),

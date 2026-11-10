@@ -23,12 +23,19 @@
 !**/.env.example
 
 # ========================================
-# EctoLedger runtime artifacts
+# IronVise runtime artifacts
 # ========================================
+ectoledger.log
+/tmp/ectoledger_backend.pid
+ledger.db
+ectoledger.db
+ledger.db-shm
+ledger.db-wal
+# make demo
+ectoledger-demo.db
+# tempfile::tempdir_in(".") in crates/host tests; left behind only when a run is killed
+crates/host/.tmp*/
 .ectoledger/
-.ironclad/
-*.elc
-*.key
 
 # ========================================
 # Logs & debug artifacts (recursive)
@@ -40,17 +47,79 @@
 # Build / Target directories (recursive)
 # ========================================
 **/target/
+gui/dist/
+sdk/typescript/dist/
+
+# Python
+**/.venv/
+**/venv/
+**/env/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/python/dist/
+
+# ========================================
+# Dependencies & package managers (recursive)
+# ========================================
+**/node_modules/
+**/bower_components/
+**/jspm_packages/
+**/.pnpm-store/
+**/.npm/
+**/.yarn/
+**/.pnp.*
 
 # ========================================
 # Rust-specific
 # ========================================
 **/*.rs.bk
-**/*$py.class
 
 # ========================================
-# Frontend / SDK build artifacts
+# Python bytecode (extra safety, recursive)
 # ========================================
-**/dist/
-**/node_modules/
-**/__pycache__/
-**/*.egg-info/
+**/*.py[cod]
+**/*$py.class
+/.vs
+
+# ========================================
+# Executables (macOS & Linux)
+# ========================================
+ectoledger-mac
+ectoledger-linux
+
+# ========================================
+# Generated tooling artifacts
+# ========================================
+# repin-actions.sh resolution cache
+.repin-cache.tsv
+
+# Playwright visual-baseline run output.
+# The baseline PNGs under gui/tests/visual/**-snapshots/ ARE tracked; only the
+# per-run report and diff output below are not.
+gui/test-results/
+gui/playwright-report/
+gui/blob-report/
+
+# ========================================
+# Local vendored tooling (never pushed)
+# ========================================
+# Third-party servers cloned for local verification -- llama.cpp and friends.
+# These are upstream repositories with their own history and licences; they are
+# checked out here only for verification against a real
+# OpenAI-compatible server. Nothing in this tree is ours to redistribute.
+vendor/
+
+# SQLite sidecars. The challenge and example ledgers ship as single files
+# (VACUUM INTO); a stray -wal alongside one is a local artifact, not evidence.
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+
+# The vendored pg-embed resolves through the workspace lockfile; running its
+# tests on their own writes a lockfile of its own.
+third_party/pg-embed/Cargo.lock
+
+# Vendored security backport tests use the root lockfile in shipping builds.
+third_party/glib/Cargo.lock

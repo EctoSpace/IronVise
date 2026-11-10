@@ -1,0 +1,12 @@
+{
+  "id": "chatcmpl-ReplayChoicesEmpty",
+  "object": "chat.completion",
+  "created": 1761177604,
+  "model": "gpt-6-astra",
+  "choices": [],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 0,
+    "total_tokens": 40
+  }
+}

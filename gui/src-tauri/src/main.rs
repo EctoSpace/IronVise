@@ -1,9 +1,9 @@
-// EctoLedger GUI — Tauri 2 Rust entry point.
+// IronVise GUI - Tauri 2 Rust entry point.
 //
 // Self-contained desktop application: an embedded Axum server backed by
 // SQLite starts automatically during the Tauri `setup` hook.  The Svelte
 // front-end communicates via Tauri IPC commands that proxy to the local
-// server (see `commands.rs`).
+// server (see `commands/`).
 //
 // The tauri.conf.json defines a placeholder window labelled
 // "_bundler_placeholder" (visible: false, required for Windows WiX/NSIS
@@ -17,6 +17,10 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod commands;
 mod embedded;
+#[cfg(test)]
+mod http_error_tests;
+#[cfg(test)]
+mod ipc_contract_tests;
 mod setup;
 
 /// True if the error indicates the SQLite DB is invalid due to a migration mismatch.
@@ -25,14 +29,112 @@ fn is_migration_mismatch(err: &(dyn std::error::Error + 'static)) -> bool {
     msg.contains("migration") && (msg.contains("modified") || msg.contains("previously applied"))
 }
 
+/// Every command the webview can call. A function so the IPC contract test
+/// (`ipc_contract_tests`) registers exactly what the app does.
+fn invoke_handler<R: tauri::Runtime>()
+-> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        commands::app::set_window_theme,
+        commands::sessions::get_sessions,
+        commands::sessions::get_session,
+        commands::sessions::get_events,
+        commands::sessions::run_prompt,
+        commands::sessions::get_metrics,
+        commands::sessions::get_prometheus_metrics,
+        commands::sessions::export_certificate,
+        commands::settings::get_config,
+        commands::settings::save_config,
+        commands::settings::get_ollama_models,
+        commands::settings::get_provider_presets,
+        commands::settings::get_provider_models,
+        commands::settings::test_provider_connection,
+        commands::keys::api_key_status,
+        commands::keys::set_api_key,
+        commands::keys::delete_api_key,
+        commands::policy::get_tripwire_config,
+        commands::policy::save_tripwire_config,
+        commands::policy::check_tripwire,
+        commands::policy::get_policies,
+        commands::policy::get_policy_content,
+        commands::policy::save_policy,
+        commands::policy::delete_policy,
+        commands::sessions::download_report,
+        commands::app::server_url,
+        commands::app::is_demo_mode,
+        commands::app::reset_demo_data,
+        commands::app::dashboard_url,
+        commands::app::observer_token,
+        commands::app::open_devtools,
+        commands::sessions::verify_session_chain,
+        // Session VC
+        commands::sessions::get_session_vc,
+        commands::sessions::verify_session_vc,
+        commands::sessions::get_pending_approval,
+        commands::sessions::post_approval_decision,
+        // Token management
+        commands::access::get_tokens,
+        commands::access::create_token,
+        commands::access::delete_token,
+        // Webhook management
+        commands::access::get_webhooks,
+        commands::access::create_webhook,
+        commands::access::delete_webhook,
+        commands::access::toggle_webhook,
+        // First-launch wizard
+        setup::detect_system_state,
+        setup::check_setup_complete,
+        setup::mark_setup_complete,
+        setup::ollama::install_ollama,
+        setup::ollama::pull_model,
+        // Developer Hub (server-side allowlisted shell commands)
+        commands::app::run_shell_command_streaming,
+    ]
+}
+
+/// The app's context (config, assets, capabilities). Generated once, shared
+/// with the IPC contract test: macOS embeds Info.plist per expansion.
+fn context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
+/// The argument the embedded server passes when it starts this executable as
+/// its semantic-guard worker (see `ectoledger::guard_process`).
+const GUARD_WORKER_ARG: &str = "--guard-worker";
+
 fn main() {
-    // Initialise tracing (logs go to stderr in debug, nowhere in release).
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,ectoledger=debug,ectoledger_gui=debug".into()),
-        )
-        .init();
+    // Started as the guard worker: run the worker loop on stdin/stdout and
+    // exit, before anything of the app starts. The parent passes the HMAC key,
+    // settings folder and API keys in this process's environment.
+    if std::env::args().nth(1).as_deref() == Some(GUARD_WORKER_ARG) {
+        let code = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())
+            .and_then(|rt| {
+                rt.block_on(ectoledger::guard_worker::run())
+                    .map_err(|e| e.to_string())
+            }) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("guard worker: {e}");
+                1
+            }
+        };
+        std::process::exit(code);
+    }
+    // The desktop bundle has no separate guard-worker executable; the
+    // embedded server starts this one with GUARD_WORKER_ARG instead.
+    if let Ok(exe) = std::env::current_exe() {
+        ectoledger::guard_process::set_worker_command(exe, vec![GUARD_WORKER_ARG.to_string()]);
+    }
+
+    // Initialise tracing. The filter names stay crate names (`ectoledger`,
+    // `ectoledger_gui`) so RUST_LOG keeps working. The printed target says ironvise.
+    ectoledger::logfmt::init_or_default("info,ectoledger=debug,ectoledger_gui=debug");
+
+    // Keys saved in Settings live in the OS credential store; the model
+    // backends look there before the environment.
+    commands::keys::register();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -50,13 +152,14 @@ fn main() {
                     if is_migration_mismatch(e.as_ref()) {
                         let path = embedded::db_path(&handle);
                         let message = format!(
-                            "The local database could not be started because a migration was changed after it was applied.\n\n\
-                            Delete the database file and restart EctoLedger:\n\n{}",
+                            "IronVise could not open its ledger: a migration recorded in it differs from this version's.\n\n\
+                            Your data has not been changed. Do not delete the file: it holds every recorded session. \
+                            Keep it, and report this with the version you upgraded from:\n\n{}",
                             path.display()
                         );
                         app.dialog()
                             .message(message)
-                            .title("EctoLedger — Invalid database")
+                            .title("IronVise - Invalid database")
                             .kind(MessageDialogKind::Error)
                             .blocking_show();
                         std::process::exit(1);
@@ -67,7 +170,7 @@ fn main() {
 
             tracing::info!(
                 port = server.port,
-                "Embedded server ready — GUI will connect to http://127.0.0.1:{}",
+                "Embedded server ready - GUI will connect to http://127.0.0.1:{}",
                 server.port
             );
 
@@ -79,19 +182,29 @@ fn main() {
 
             // The tauri.conf.json defines a placeholder window with label
             // "_bundler_placeholder" (visible: false) to satisfy the Windows
-            // WiX/NSIS bundler.  Close it now — it is not needed at runtime.
+            // WiX/NSIS bundler.  Close it now - it is not needed at runtime.
             if let Some(placeholder) = app.get_webview_window("_bundler_placeholder") {
                 let _ = placeholder.destroy();
             }
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("EctoLedger")
+            let main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("IronVise")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(1024.0, 640.0)
-                // NOTE: `transparent` is NOT set — windows are opaque by default in Tauri 2.
+                // NOTE: `transparent` is NOT set - windows are opaque by default in Tauri 2.
                 // The tauri.conf.json "transparent": false ensures the bundler never
                 // enables compositor transparency, preventing Linux/Windows DWM glitches.
                 .center()
+                // Shown once the page has painted, so the native background
+                // (white or black, whatever the OS picks) never flashes
+                // before the theme. A page that never finishes loading still
+                // gets a window, after a few seconds.
+                .visible(false)
+                .on_page_load(|window, payload| {
+                    if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        let _ = window.show();
+                    }
+                })
                 .on_web_resource_request(move |_request: tauri::http::Request<Vec<u8>>, response: &mut tauri::http::Response<std::borrow::Cow<'static, [u8]>>| {
                     // Inject CSP on text/html responses (the Tauri entry
                     // document).  The browser then enforces this policy for
@@ -122,62 +235,20 @@ fn main() {
                 })
                 .build()
                 .map_err(|e| format!("Failed to create main window: {e}"))?;
+            let window = main_window.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                if !window.is_visible().unwrap_or(true) {
+                    let _ = window.show();
+                }
+            });
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            commands::get_sessions,
-            commands::get_session,
-            commands::get_events,
-            commands::run_prompt,
-            commands::chat,
-            commands::get_metrics,
-            commands::get_prometheus_metrics,
-            commands::export_certificate,
-            commands::get_config,
-            commands::save_config,
-            commands::get_ollama_models,
-            commands::get_tripwire_config,
-            commands::save_tripwire_config,
-            commands::get_policies,
-            commands::get_policy_content,
-            commands::save_policy,
-            commands::delete_policy,
-            commands::download_report,
-            commands::server_url,
-            commands::is_demo_mode,
-            commands::reset_demo_data,
-            commands::dashboard_url,
-            commands::observer_token,
-            commands::open_devtools,
-            // Session VC
-            commands::get_session_vc,
-            commands::verify_session_vc,
-            commands::get_pending_approval,
-            commands::post_approval_decision,
-            // Token management
-            commands::get_tokens,
-            commands::create_token,
-            commands::delete_token,
-            // Webhook management
-            commands::get_webhooks,
-            commands::create_webhook,
-            commands::delete_webhook,
-            commands::toggle_webhook,
-            // First-launch wizard (Track 3)
-            setup::detect_system_state,
-            setup::check_setup_complete,
-            setup::mark_setup_complete,
-            setup::initialize_database,
-            setup::install_ollama,
-            setup::pull_model,
-            // Developer Hub (server-side allowlisted shell commands)
-            commands::run_shell_command,
-            commands::run_shell_command_streaming,
-        ])
-        .run(tauri::generate_context!())
+        .invoke_handler(invoke_handler())
+        .run(context())
         .unwrap_or_else(|e| {
-            eprintln!("Fatal: EctoLedger GUI failed to start: {e}");
+            eprintln!("Fatal: IronVise GUI failed to start: {e}");
             std::process::exit(1);
         });
 }

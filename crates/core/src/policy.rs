@@ -34,12 +34,12 @@
 //   on_timeout = "deny"
 //
 //   # Extended predicates (joinable with &&):
-//   # - path_extension_matches('.key')           — read_file path ends with .key
-//   # - path_extension_matches('(\\.pem|\\.key)') — regex over the full path string
-//   # - url_host_in_cidr('10.0.0.0/8')            — http_get URL host IP in CIDR
-//   # - command_matches_regex('^nmap\\s')          — full command matches regex
+//   # - path_extension_matches('.key')           - read_file path ends with .key
+//   # - path_extension_matches('(\\.pem|\\.key)') - regex over the full path string
+//   # - url_host_in_cidr('10.0.0.0/8')            - http_get URL host IP in CIDR
+//   # - command_matches_regex('^nmap\\s')          - full command matches regex
 //
-//   # Plugin system — third-party security tools loaded from the policy file.
+//   # Plugin system - third-party security tools loaded from the policy file.
 //   # Each plugin adds its binary to the executor allowlist and supplies env_passthrough.
 //
 //   [[plugins]]
@@ -60,7 +60,81 @@ use crate::intent::ProposedIntent;
 use regex_lite::Regex;
 use serde::Deserialize;
 
-// ── Structs ────────────────────────────────────────────────────────────────────
+/// A rule list written either in full (`[[forbidden_actions]]` tables) or as
+/// bare names (`forbidden_actions = ["write_file"]`), each name standing for
+/// a table with only that field. The shipped SOC 2, PCI DSS and OWASP packs,
+/// the desktop app's new-policy template and the documented `--policy`
+/// examples all use the short form, so both must deserialize.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NameOrTable<T> {
+    Name(String),
+    Table(T),
+}
+
+fn names_or_tables<'de, D, T>(d: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + From<String>,
+{
+    let items: Option<Vec<NameOrTable<T>>> = Option::deserialize(d)?;
+    Ok(items.map(|v| {
+        v.into_iter()
+            .map(|item| match item {
+                NameOrTable::Name(name) => T::from(name),
+                NameOrTable::Table(t) => t,
+            })
+            .collect()
+    }))
+}
+
+impl From<String> for AllowedAction {
+    fn from(action: String) -> Self {
+        Self {
+            action,
+            path_pattern: None,
+            allowed_commands: None,
+        }
+    }
+}
+
+impl From<String> for ForbiddenAction {
+    fn from(action: String) -> Self {
+        Self { action }
+    }
+}
+
+impl From<String> for RequiredCheck {
+    /// A check named in prose ("SSH access controls reviewed"); it names no
+    /// action of its own.
+    fn from(name: String) -> Self {
+        Self {
+            name,
+            action: String::new(),
+            params: None,
+            required: None,
+            timeout_steps: None,
+        }
+    }
+}
+
+impl AuditPolicy {
+    /// Whether the policy has any rule the engine applies to an action or an
+    /// observation. A controls mapping such as the built-in ISO 42001 pack
+    /// parses as a policy but checks nothing.
+    pub fn has_enforceable_rules(&self) -> bool {
+        self.allowed_actions.as_ref().is_some_and(|v| !v.is_empty())
+            || self
+                .forbidden_actions
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || !self.command_rules.is_empty()
+            || !self.observation_rules.is_empty()
+            || !self.approval_gates.is_empty()
+            || self.findings.is_some()
+            || self.max_steps.is_some()
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -70,8 +144,12 @@ pub struct AuditPolicy {
     pub max_steps: Option<u32>,
     pub require_findings: Option<bool>,
     pub min_severity_threshold: Option<String>,
+    /// Parsed and kept with the policy; not enforced by the engine in 0.8.
+    #[serde(default, deserialize_with = "names_or_tables")]
     pub required_checks: Option<Vec<RequiredCheck>>,
+    #[serde(default, deserialize_with = "names_or_tables")]
     pub allowed_actions: Option<Vec<AllowedAction>>,
+    #[serde(default, deserialize_with = "names_or_tables")]
     pub forbidden_actions: Option<Vec<ForbiddenAction>>,
     pub findings: Option<FindingsPolicy>,
     /// Conditional command rules evaluated when action == "run_command".
@@ -191,7 +269,7 @@ pub struct PluginDefinition {
     pub description: Option<String>,
     /// Expected SHA-256 hash of the plugin binary (hex-encoded, lowercase).
     /// When set, the executor verifies the binary's hash before spawning it.
-    /// (TM-5b hardening: prevents binary replacement / supply-chain attacks.)
+    /// (prevents binary replacement / supply-chain attacks.)
     pub sha256: Option<String>,
     /// Regexes applied to the full argument string. Only these patterns are permitted.
     /// An empty list means all arguments are allowed.
@@ -200,12 +278,10 @@ pub struct PluginDefinition {
     /// Host environment variables forwarded into the child process for this binary only.
     /// **Deny-by-default**: only variables explicitly listed here are forwarded;
     /// all others are blocked. Names matching sensitive patterns (SECRET, KEY, etc.)
-    /// are always blocked regardless of this list (TM-5c hardening).
+    /// are always blocked regardless of this list.
     #[serde(default)]
     pub env_passthrough: Vec<String>,
 }
-
-// ── Errors ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct PolicyViolation(pub String);
@@ -225,13 +301,18 @@ pub enum ObservationOutcome {
     Clean,
     /// Content was modified (redactions applied).
     Redacted(String),
-    /// A pattern was flagged; observation is logged but continues.
-    Flagged(String),
-    /// Session must be aborted.
-    Abort(String),
+    /// A pattern was flagged; observation is logged but continues. `content`
+    /// has every redact rule applied.
+    Flagged { labels: String, content: String },
+    /// Session must be aborted. `content` has every redact rule applied, for
+    /// whatever reports the observation.
+    Abort { reason: String, content: String },
 }
 
-// ── Engine ─────────────────────────────────────────────────────────────────────
+fn redact(re: &Regex, text: &str, label: &str) -> String {
+    re.replace_all(text, format!("[REDACTED:{label}]").as_str())
+        .into_owned()
+}
 
 pub struct PolicyEngine {
     policy: AuditPolicy,
@@ -246,7 +327,7 @@ pub struct PolicyEngine {
 impl PolicyEngine {
     /// Creates a new `PolicyEngine`, pre-compiling all regex patterns in the policy.
     ///
-    /// Returns `Err` if any regex pattern is invalid — this prevents silent
+    /// Returns `Err` if any regex pattern is invalid - this prevents silent
     /// bypasses caused by typos in `deny` rules.
     pub fn new(policy: AuditPolicy) -> Result<Self, PolicyViolation> {
         let mut errors: Vec<String> = Vec::new();
@@ -282,7 +363,7 @@ impl PolicyEngine {
                     .map(|pattern| match Regex::new(pattern) {
                         Ok(r) => Some(r),
                         Err(e) => {
-                            errors.push(format!("plugin arg_pattern '{}': {}", pattern, e));
+                            errors.push(format!("plugin arg_pattern '{pattern}': {e}"));
                             None
                         }
                     })
@@ -316,8 +397,7 @@ impl PolicyEngine {
             && step >= max
         {
             return Err(PolicyViolation(format!(
-                "step {} exceeds policy max_steps ({})",
-                step, max
+                "step {step} exceeds policy max_steps ({max})"
             )));
         }
 
@@ -328,8 +408,7 @@ impl PolicyEngine {
             for fa in forbidden {
                 if fa.action == action {
                     return Err(PolicyViolation(format!(
-                        "action '{}' is forbidden by policy",
-                        action
+                        "action '{action}' is forbidden by policy"
                     )));
                 }
             }
@@ -373,8 +452,7 @@ impl PolicyEngine {
             }
             if !matched {
                 return Err(PolicyViolation(format!(
-                    "action '{}' with given params is not in policy allowed_actions",
-                    action
+                    "action '{action}' with given params is not in policy allowed_actions"
                 )));
             }
         }
@@ -383,7 +461,10 @@ impl PolicyEngine {
         if action == "run_command"
             && let Some(cmd_str) = intent.params_command()
         {
-            let mut parts = cmd_str.splitn(2, char::is_whitespace);
+            // Trim first: splitn on raw leading whitespace yields an empty program
+            // token (the text before that whitespace), letting a padded command
+            // bypass every `program = "..."` rule below.
+            let mut parts = cmd_str.trim_start().splitn(2, char::is_whitespace);
             let program = parts.next().unwrap_or("").trim();
             let args = parts.next().unwrap_or("").trim();
 
@@ -408,16 +489,14 @@ impl PolicyEngine {
                             .as_deref()
                             .unwrap_or("blocked by command_rules policy");
                         return Err(PolicyViolation(format!(
-                            "command '{}' denied: {}",
-                            cmd_str, reason
+                            "command '{cmd_str}' denied: {reason}"
                         )));
                     }
                     CommandDecision::RequireApproval => {
                         // Signal via PolicyViolation with a special prefix that callers can
                         // detect. The agent loop treats this the same as an ApprovalGate trigger.
                         return Err(PolicyViolation(format!(
-                            "REQUIRE_APPROVAL: command '{}' requires human approval before execution",
-                            cmd_str
+                            "REQUIRE_APPROVAL: command '{cmd_str}' requires human approval before execution"
                         )));
                     }
                 }
@@ -436,44 +515,52 @@ impl PolicyEngine {
         let mut working = content.to_string();
         let mut flagged_labels: Vec<String> = Vec::new();
 
-        for (i, rule) in self.policy.observation_rules.iter().enumerate() {
-            let re = match self
-                .compiled_observation_rules
-                .get(i)
-                .and_then(|r| r.as_ref())
-            {
-                Some(r) => r,
-                None => continue, // regex failed to compile at load time
-            };
+        for (rule, re) in self.observation_rules() {
             if !re.is_match(&working) {
                 continue;
             }
             match rule.action {
                 ObservationAction::Abort => {
-                    return ObservationOutcome::Abort(format!(
-                        "observation rule '{}' triggered abort",
-                        rule.label
-                    ));
+                    return ObservationOutcome::Abort {
+                        reason: format!("observation rule '{}' triggered abort", rule.label),
+                        content: self.redact_observation(content),
+                    };
                 }
                 ObservationAction::Flag => {
                     flagged_labels.push(rule.label.clone());
                 }
-                ObservationAction::Redact => {
-                    let label = rule.label.clone();
-                    working = re
-                        .replace_all(&working, format!("[REDACTED:{}]", label).as_str())
-                        .into_owned();
-                }
+                ObservationAction::Redact => working = redact(re, &working, &rule.label),
             }
         }
 
         if !flagged_labels.is_empty() {
-            return ObservationOutcome::Flagged(flagged_labels.join(", "));
+            return ObservationOutcome::Flagged {
+                labels: flagged_labels.join(", "),
+                content: working,
+            };
         }
         if working != content {
             return ObservationOutcome::Redacted(working);
         }
         ObservationOutcome::Clean
+    }
+
+    /// `content` with every redact rule applied, in order.
+    pub fn redact_observation(&self, content: &str) -> String {
+        self.observation_rules()
+            .filter(|(rule, _)| matches!(rule.action, ObservationAction::Redact))
+            .fold(content.to_string(), |text, (rule, re)| {
+                redact(re, &text, &rule.label)
+            })
+    }
+
+    /// Observation rules whose regex compiled at load time.
+    fn observation_rules(&self) -> impl Iterator<Item = (&ObservationRule, &Regex)> {
+        self.policy
+            .observation_rules
+            .iter()
+            .zip(&self.compiled_observation_rules)
+            .filter_map(|(rule, re)| re.as_ref().map(|re| (rule, re)))
     }
 
     /// Checks whether a proposed intent triggers any approval gate rules.
@@ -561,7 +648,7 @@ impl PolicyEngine {
                     .unwrap_or(&lower);
                 if Self::BLOCKED_PLUGIN_BINARIES.contains(&base) {
                     tracing::warn!(
-                        "Plugin '{}' declares blocked binary '{}' — not added to allowlist",
+                        "Plugin '{}' declares blocked binary '{}' - not added to allowlist",
                         p.name,
                         p.binary,
                     );
@@ -597,7 +684,7 @@ impl PolicyEngine {
     /// Returns the `env_passthrough` list for the plugin whose `binary` matches `program`,
     /// filtered to exclude sensitive environment variable names.
     ///
-    /// **Deny-by-default (TM-5c)**: only variables explicitly listed in the plugin's
+    /// **Deny-by-default**: only variables explicitly listed in the plugin's
     /// `env_passthrough` are forwarded. Any variable whose name contains a sensitive
     /// substring (SECRET, KEY, TOKEN, etc.) is always blocked even if explicitly listed.
     pub fn plugin_env_passthrough_for(&self, program: &str) -> Vec<String> {
@@ -671,8 +758,6 @@ impl PolicyEngine {
     }
 }
 
-// ── Trigger expression evaluator ───────────────────────────────────────────────
-
 /// Evaluates a simple trigger expression of the form:
 ///   `action == 'x' && command_contains('y')`
 ///
@@ -742,11 +827,15 @@ fn eval_clause(clause: &str, intent: &ProposedIntent) -> bool {
             && let Some(host) = parsed.host_str()
             && let Ok(ip) = host.parse::<std::net::IpAddr>()
         {
-            if let Ok(network) = cidr_str.parse::<ipnetwork::IpNetwork>() {
-                return network.contains(ip);
-            } else {
-                tracing::warn!("Invalid CIDR in url_host_in_cidr: '{}'", cidr_str);
-            }
+            return match cidr_str.parse::<ipnetwork::IpNetwork>() {
+                Ok(network) => network.contains(ip),
+                Err(e) => {
+                    tracing::warn!("Invalid CIDR in url_host_in_cidr: '{}': {}", cidr_str, e);
+                    // Fail-closed like the regex predicates above: a typo'd CIDR
+                    // must require approval, not silently disable the gate.
+                    true
+                }
+            };
         }
         return false;
     }
@@ -770,15 +859,18 @@ fn eval_clause(clause: &str, intent: &ProposedIntent) -> bool {
     // Unknown predicate: fail-closed to prevent silent bypass of approval gates.
     // A typo like 'acton == ...' must trigger the gate, not silently skip it.
     tracing::error!(
-        "Unknown policy trigger clause: '{}' — failing closed (approval required)",
+        "Unknown policy trigger clause: '{}' - failing closed (approval required)",
         clause
     );
     true
 }
 
-// ── Utility ────────────────────────────────────────────────────────────────────
-
 /// SHA-256 hash of policy file contents, stored in genesis and session records.
 pub fn policy_hash_bytes(content: &[u8]) -> String {
-    crate::hash::sha256_hex(content)
+    // SHA-256 in every build, as documented: anyone can check it with
+    // `sha256sum`. It is not a chain hash, so `hash-blake3` does not apply.
+    crate::hash::sha256_hex_legacy(content)
 }
+
+#[cfg(test)]
+mod tests;

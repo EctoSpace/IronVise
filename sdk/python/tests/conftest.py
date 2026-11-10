@@ -1,12 +1,84 @@
-"""Shared pytest fixtures for the EctoLedger Python SDK test suite."""
+"""Sample-data fixtures for the SDK's own tests.
+
+Intentionally duplicated with ``tests/api/conftest.py``. The two suites are
+independent now -- this one exercises the client library and needs no server,
+while ``tests/api`` is a black-box suite against a running Rust host -- and
+pytest has no clean way to share a conftest across sibling roots. Ninety lines
+of literal sample data is a smaller cost than coupling the suites back together.
+"""
+
 from __future__ import annotations
+
+import json
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
-pytest_plugins = ["conftest_adversarial"]
+import ironvise_sdk.client as _client_module
+
+# No `pytest_plugins` here. conftest_adversarial spins up a live Rust host,
+# which belongs to the black-box suite in tests/api/, not to the SDK's own
+# tests. Loading it here is what made `pip install ectoledger-sdk` ship a suite
+# that could not run without a Rust build.
+
+
+@pytest.fixture(autouse=True)
+def _fast_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the real backoff delay between GET retries in every test.
+
+    ``LedgerClient._get`` awaits the module-level ``_sleep`` between
+    attempts; replacing it here keeps the whole suite fast while leaving the
+    retry *logic* (attempt counts, which errors retry) exercised for real. A
+    test that cares about the delay itself patches ``_sleep`` again locally.
+    """
+
+    async def _no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(_client_module, "_sleep", _no_wait)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _one_default_ssl_context() -> Iterator[None]:
+    """Build httpx's default SSL context once instead of once per client.
+
+    Loading the CA bundle costs ~50 ms, and the client tests build a fresh
+    ``LedgerClient`` for each of several hundred cases; that alone made the
+    suite take over a minute. A context built from the default arguments is
+    the same every time, so only that call is cached; any other is passed
+    through. If httpx moves this private hook, the suite runs slower, not
+    differently.
+    """
+    try:
+        from httpx._transports import default as transports
+    except ImportError:  # pragma: no cover - depends on the httpx version
+        yield
+        return
+    build = getattr(transports, "create_ssl_context", None)
+    if build is None:  # pragma: no cover - depends on the httpx version
+        yield
+        return
+    shared = []
+
+    def cached(verify=True, cert=None, trust_env=True):
+        if verify is not True or cert is not None or trust_env is not True:
+            return build(verify=verify, cert=cert, trust_env=trust_env)
+        if not shared:
+            shared.append(build(verify=verify, cert=cert, trust_env=trust_env))
+        return shared[0]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(transports, "create_ssl_context", cached)
+        yield
+
 
 BASE_URL = "http://localhost:3000"
 SESSION_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+# Response bodies shaped exactly as the Rust server sends them, shared with the
+# TypeScript suite so both SDKs parse the same bytes.
+SERVER_RESPONSES = Path(__file__).resolve().parents[2] / "fixtures" / "server-responses"
 
 
 @pytest.fixture
@@ -19,15 +91,8 @@ def session_id() -> str:
     return SESSION_ID
 
 
-# Realistic SHA-256 hash of the goal string "Perform SOC 2 compliance audit of staging environment"
+# SHA-256 of the empty string: any well-formed digest will do for these tests.
 GOAL_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-# Ed25519 public key (32 bytes hex-encoded)
-ED25519_PUBKEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa3f4a18446b0b8d1801f17"
-# Ed25519 signature (64 bytes hex-encoded)
-ED25519_SIGNATURE = (
-    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
-    "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
-)
 
 
 @pytest.fixture
@@ -54,37 +119,20 @@ def sample_session_finished() -> dict:
     }
 
 
-# SHA-256 of the genesis event payload
-GENESIS_CONTENT_HASH = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
-# SHA-256 of the second event payload (chained from genesis)
+# SHA-256 of an appended event's payload
 EVENT_1_CONTENT_HASH = "2c624232cdd221771294dfbb310aca000462b31802e26ad0a0f5f6c4e7f2e08b"
 
 
 @pytest.fixture
-def sample_event() -> dict:
-    return {
-        "id": 1,
-        "session_id": SESSION_ID,
-        "payload": {"type": "thought", "content": "Enumerating open ports on target host"},
-        "payload_hash": GENESIS_CONTENT_HASH,
-        "prev_hash": None,
-        "sequence": 0,
-        "created_at": "2026-02-22T10:00:01Z",
-        "public_key": None,
-        "signature": None,
-    }
+def server_events() -> list[dict]:
+    """``GET /api/events`` rows: ``crates/host/src/server/exports.rs``, ``get_events_json``."""
+    return json.loads((SERVER_RESPONSES / "events.json").read_text())
 
 
 @pytest.fixture
-def sample_event_signed(sample_event: dict) -> dict:
-    return {
-        **sample_event,
-        "id": 2,
-        "sequence": 1,
-        "prev_hash": sample_event["payload_hash"],
-        "public_key": ED25519_PUBKEY,
-        "signature": ED25519_SIGNATURE,
-    }
+def server_compliance() -> dict:
+    """``GET /api/sessions/{id}/compliance``: ``crates/host/src/pool.rs``, ``prove_compliance_for_session``."""
+    return json.loads((SERVER_RESPONSES / "compliance.json").read_text())
 
 
 @pytest.fixture

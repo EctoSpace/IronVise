@@ -9,13 +9,11 @@ name    = "SOC2 Compliance Audit"
 goal    = "Audit system controls for SOC2 Trust Services Criteria: access management, logging completeness, encryption at rest, change management, and continuous risk monitoring."
 max_steps = 40
 
-# Actions the agent is allowed to take
-allowed_actions = ["run_command", "read_file", "http_get", "complete"]
-
 # Actions that are never permitted under this policy
 forbidden_actions = ["write_file", "delete_file"]
 
-# Key controls that must appear in the agent's findings before it may complete.
+# Controls the audit is expected to cover. Kept with the policy; the engine
+# does not enforce them in 0.8.
 required_checks = [
     "SSH access controls reviewed",
     "Sudo/privilege escalation rules reviewed",
@@ -27,59 +25,128 @@ required_checks = [
 ]
 
 # ---------------------------------------------------------------------------
-# Command rules — restrict dangerous enumeration tools
+# Command rules - restrict dangerous enumeration tools
 # ---------------------------------------------------------------------------
 
-[[command_rules]]
-description = "Allow standard Unix inspection commands"
-pattern     = "^(ls|cat|stat|find|grep|awk|sed|head|tail|wc|df|du|id|whoami|uname|hostname|ps|netstat|ss|ip|ifconfig|openssl|systemctl|journalctl|auditctl|auditd)\\b"
-action      = "allow"
+# Actions the agent may take. run_command is limited to these programs; the
+# Windows equivalents (dir, type, findstr, ...) follow the Unix names, and a
+# name the host does not allow (see executor.rs) never runs there.
+# (allow standard unix inspection commands).
+[[allowed_actions]]
+action = "run_command"
+allowed_commands = ["ls", "cat", "stat", "find", "grep", "awk", "sed", "head", "tail", "wc", "df", "du", "id", "whoami", "uname", "hostname", "ps", "netstat", "ss", "ip", "ifconfig", "openssl", "systemctl", "journalctl", "auditctl", "auditd", "dir", "type", "findstr", "where", "tasklist", "systeminfo", "icacls", "attrib", "ver"]
+
+[[allowed_actions]]
+action = "read_file"
+
+[[allowed_actions]]
+action = "http_get"
+
+[[allowed_actions]]
+action = "complete"
 
 [[command_rules]]
-description = "Block active network scanning"
-pattern     = "nmap|masscan|zmap|unicornscan|hping"
-action      = "deny"
+program = "nmap"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block active network scanning"
 
 [[command_rules]]
-description = "Block packet capture"
-pattern     = "tcpdump|wireshark|tshark"
-action      = "deny"
+program = "masscan"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block active network scanning"
 
 [[command_rules]]
-description = "Block destructive operations"
-pattern     = "\\brm\\s+-rf\\b|\\bdd\\b|\\bshred\\b|\\bmkfs\\b"
-action      = "deny"
+program = "zmap"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block active network scanning"
+
+[[command_rules]]
+program = "unicornscan"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block active network scanning"
+
+[[command_rules]]
+program = "hping"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block active network scanning"
+
+[[command_rules]]
+program = "tcpdump"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block packet capture"
+
+[[command_rules]]
+program = "wireshark"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block packet capture"
+
+[[command_rules]]
+program = "tshark"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block packet capture"
+
+[[command_rules]]
+program = "rm"
+arg_pattern = "^-rf"
+decision = "deny"
+reason = "Block destructive operations"
+
+[[command_rules]]
+program = "dd"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block destructive operations"
+
+[[command_rules]]
+program = "shred"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block destructive operations"
+
+[[command_rules]]
+program = "mkfs"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block destructive operations"
 
 # ---------------------------------------------------------------------------
-# Observation rules — redact secrets that surface in command output
+# Observation rules - redact secrets that surface in command output
 # ---------------------------------------------------------------------------
 
+# Redact private key material
 [[observation_rules]]
-description = "Redact private key material"
-pattern     = "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
-action      = "redact"
-sensitivity = "high"
+pattern = "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+action = "redact"
+label = "private_key_material"
 
+# Redact AWS secret keys
 [[observation_rules]]
-description = "Redact AWS secret keys"
-pattern     = "(?i)aws_secret_access_key\\s*=\\s*[A-Za-z0-9/+]{40}"
-action      = "redact"
-sensitivity = "high"
+pattern = "(?i)aws_secret_access_key\\s*=\\s*[A-Za-z0-9/+]{40}"
+action = "redact"
+label = "aws_secret_keys"
 
+# Redact generic passwords in config output
 [[observation_rules]]
-description = "Redact generic passwords in config output"
-pattern     = "(?i)password\\s*[=:]\\s*\\S+"
-action      = "redact"
-sensitivity = "medium"
+pattern = "(?i)password\\s*[=:]\\s*\\S+"
+action = "redact"
+label = "generic_passwords"
 
+# Flag any base64-encoded blobs larger than 100 chars (possible exfil)
 [[observation_rules]]
-description = "Flag any base64-encoded blobs larger than 100 chars (possible exfil)"
-pattern     = "[A-Za-z0-9+/]{100,}={0,2}"
-action      = "flag"
-sensitivity = "low"
+pattern = "[A-Za-z0-9+/]{100,}={0,2}"
+action = "flag"
+label = "base64_encoded_blobs"
 
 # ---------------------------------------------------------------------------
-# Approval gates — require human sign-off for high-impact actions
+# Approval gates - require human sign-off for high-impact actions
 # ---------------------------------------------------------------------------
 
 [[approval_gates]]

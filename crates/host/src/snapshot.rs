@@ -3,7 +3,7 @@ use crate::ledger::get_events;
 use crate::schema::{LedgerEventRow, SnapshotRow};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, SqlitePool};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +38,9 @@ fn event_type_label(payload: &crate::schema::EventPayload) -> String {
         }
         crate::schema::EventPayload::KeyRevocation { .. } => "key_revocation".to_string(),
         crate::schema::EventPayload::ChatMessage { .. } => "chat_message".to_string(),
+        crate::schema::EventPayload::GuardDenial { .. } => "guard_denial".to_string(),
+        crate::schema::EventPayload::TripwireRejection { .. } => "tripwire_rejection".to_string(),
+        crate::schema::EventPayload::DataReceipt { .. } => "data_receipt".to_string(),
     }
 }
 
@@ -162,6 +165,107 @@ pub async fn snapshot_at_sequence(
     let payload = build_snapshot_payload(&events, sequence);
     let state_hash = compute_state_hash(&payload).map_err(SnapshotError::Serialize)?;
     save_snapshot(pool, sequence, &state_hash, &payload)
+        .await
+        .map_err(SnapshotError::Db)
+}
+
+// SQLite variants (schema aligned by migrations/sqlite/012_*).
+
+#[derive(FromRow)]
+struct SqliteAgentSnapshotDbRow {
+    id: String,
+    sequence: i64,
+    state_hash: String,
+    payload: String,
+    created_at: chrono::DateTime<Utc>,
+}
+
+pub async fn get_latest_snapshot_sqlite(
+    pool: &SqlitePool,
+) -> Result<Option<SnapshotRow>, sqlx::Error> {
+    let row = sqlx::query_as::<_, SqliteAgentSnapshotDbRow>(
+        "SELECT id, sequence, state_hash, payload, created_at
+         FROM agent_snapshots
+         ORDER BY sequence DESC
+         LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    row.map(|r| {
+        let id: Uuid = r.id.parse().map_err(|e| {
+            sqlx::Error::Decode(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid UUID in agent_snapshots.id '{}': {e}", r.id),
+            )))
+        })?;
+        let payload: serde_json::Value = serde_json::from_str(&r.payload).map_err(|e| {
+            sqlx::Error::Decode(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("corrupt snapshot payload at id={}: {e}", r.id),
+            )))
+        })?;
+        Ok(SnapshotRow {
+            id,
+            sequence: r.sequence,
+            state_hash: r.state_hash,
+            payload,
+            created_at: r.created_at,
+        })
+    })
+    .transpose()
+}
+
+pub async fn save_snapshot_sqlite(
+    pool: &SqlitePool,
+    sequence: i64,
+    state_hash: &str,
+    payload: &SnapshotPayload,
+) -> Result<SnapshotRow, sqlx::Error> {
+    let payload_value = serde_json::to_value(payload).map_err(|e| {
+        sqlx::Error::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            e.to_string(),
+        )))
+    })?;
+    let payload_text = serde_json::to_string(&payload_value).map_err(|e| {
+        sqlx::Error::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            e.to_string(),
+        )))
+    })?;
+    let now = Utc::now();
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO agent_snapshots (id, sequence, state_hash, payload, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+    .bind(id.to_string())
+    .bind(sequence)
+    .bind(state_hash)
+    .bind(&payload_text)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    Ok(SnapshotRow {
+        id,
+        sequence,
+        state_hash: state_hash.to_string(),
+        payload: payload_value,
+        created_at: now,
+    })
+}
+
+pub async fn snapshot_at_sequence_sqlite(
+    pool: &SqlitePool,
+    sequence: i64,
+) -> Result<SnapshotRow, SnapshotError> {
+    let events = crate::ledger::sqlite::get_events_sqlite(pool, 0, sequence)
+        .await
+        .map_err(SnapshotError::Db)?;
+    let payload = build_snapshot_payload(&events, sequence);
+    let state_hash = compute_state_hash(&payload).map_err(SnapshotError::Serialize)?;
+    save_snapshot_sqlite(pool, sequence, &state_hash, &payload)
         .await
         .map_err(SnapshotError::Db)
 }

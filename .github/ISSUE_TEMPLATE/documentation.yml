@@ -1,0 +1,29 @@
+name: Inaccurate documentation
+description: The documentation says something the code does not do.
+labels: ["docs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Treated as a defect, not a typo. Several of the fixes in 0.8.0 started
+        as exactly this.
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: File and line, or a URL.
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: What it claims
+    validations:
+      required: true
+  - type: textarea
+    id: reality
+    attributes:
+      label: What the code does
+      description: A file and line, a command's output, or a test that shows it.
+    validations:
+      required: true

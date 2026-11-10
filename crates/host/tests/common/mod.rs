@@ -40,11 +40,7 @@ pub async fn assert_chain_valid(pool: &PgPool, from: i64, to: i64) {
     let valid = ledger::verify_chain(pool, from, to)
         .await
         .expect("verify_chain");
-    assert!(
-        valid,
-        "chain verification failed for sequence {}..{}",
-        from, to
-    );
+    assert!(valid, "chain verification failed for sequence {from}..{to}");
 }
 
 pub struct MockLlmBackend {

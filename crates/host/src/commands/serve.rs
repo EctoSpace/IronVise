@@ -1,4 +1,4 @@
-//! `ectoledger serve` — run the Observer dashboard without an agent.
+//! `ironvise serve` - run the Observer dashboard without an agent.
 
 use crate::pool;
 use crate::server;
@@ -34,7 +34,7 @@ pub async fn run_with_pool(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let bind_host = crate::config::bind_host();
     let bind_port = crate::config::bind_port();
-    let bind_addr = format!("{}:{}", bind_host, bind_port);
+    let bind_addr = format!("{bind_host}:{bind_port}");
     let listener = TcpListener::bind(&bind_addr).await?;
     let display_host = if bind_host == "0.0.0.0" {
         "localhost"
@@ -47,9 +47,9 @@ pub async fn run_with_pool(
         pool::DatabasePool::Sqlite(_) => {
             tracing::warn!(
                 "SQLite is a single-instance backend. Do NOT run multiple \
-                 EctoLedger processes against the same database file. \
+                 IronVise processes against the same database file. \
                  Use PostgreSQL for multi-instance deployments. \
-                 See docs/SCALING.md for details."
+                 See docs/guides/scaling.md for details."
             );
             "SQLite"
         }
@@ -61,18 +61,15 @@ pub async fn run_with_pool(
         db_kind,
     );
 
-    // ── One-time startup recovery ─────────────────────────────────────────
     // Recover sessions stuck in 'running' status from a previous server
     // lifetime (e.g. crash, kill -9) and mark dangling actions as failed.
-    // This MUST run once at startup, NOT inside run_cognitive_loop — doing
+    // This MUST run once at startup, NOT inside run_cognitive_loop - doing
     // it per-session would kill every other actively-running session.
-    if let Some(pg) = pool.as_pg() {
-        if let Err(e) = crate::wakeup::recover_zombie_sessions(pg).await {
-            tracing::warn!("startup: failed to recover zombie sessions: {e}");
-        }
-        if let Err(e) = crate::wakeup::recover_incomplete_actions(pg).await {
-            tracing::warn!("startup: failed to recover incomplete actions: {e}");
-        }
+    if let Err(e) = crate::wakeup::recover_zombie_sessions(&pool).await {
+        tracing::warn!("startup: failed to recover zombie sessions: {e}");
+    }
+    if let Err(e) = crate::wakeup::recover_incomplete_actions(&pool).await {
+        tracing::warn!("startup: failed to recover incomplete actions: {e}");
     }
 
     let (made_router, task_tracker) = server::router(pool, metrics, cancel.clone());
@@ -83,7 +80,7 @@ pub async fn run_with_pool(
     )
     .with_graceful_shutdown(cancel.clone().cancelled_owned());
 
-    // Single await — the graceful_shutdown future observes the cancel token
+    // Single await - the graceful_shutdown future observes the cancel token
     // that main.rs fires on Ctrl-C.  No duplicate signal handler needed.
     if let Err(e) = server.await {
         // Axum returns an error if the listener is closed unexpectedly.
@@ -94,7 +91,6 @@ pub async fn run_with_pool(
         tracing::debug!("Server exited during shutdown: {e}");
     }
 
-    // ── Drain tracked cognitive-loop tasks ─────────────────────────────────
     // Close the tracker so no new tasks can be spawned, then wait for all
     // in-flight sessions to exit (they will observe `cancel.is_cancelled()`
     // at the top of their next loop iteration).

@@ -31,7 +31,7 @@ pub enum MerkleError {
 /// A single sibling entry in a Merkle inclusion proof.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProofNode {
-    /// "left" or "right" — which side this sibling is on.
+    /// "left" or "right" - which side this sibling is on.
     pub side: String,
     /// SHA-256 hash of the sibling node as lowercase hex.
     pub hash: String,
@@ -69,9 +69,8 @@ fn hash_leaf(data: &[u8]) -> String {
 /// Combines two Merkle sibling hashes (both lowercase hex) into a parent hash
 /// with domain separation: SHA-256(0x01 || left_bytes || right_bytes).
 ///
-/// Returns `Err(MerkleError::InvalidHex)` if either input is not valid hex.
-/// Previously this used `unwrap_or_default()`, which silently produced a hash
-/// over empty bytes when given malformed input — a correctness and security bug.
+/// Returns `Err(MerkleError::InvalidHex)` if either input is not valid hex,
+/// rather than hashing empty bytes in its place.
 fn combine(left: &str, right: &str) -> Result<String, MerkleError> {
     let l = hex::decode(left).map_err(|_| MerkleError::InvalidHex(left.to_string()))?;
     let r = hex::decode(right).map_err(|_| MerkleError::InvalidHex(right.to_string()))?;
@@ -105,7 +104,7 @@ pub fn build_merkle_tree(hashes: &[&str]) -> Result<MerkleTree, MerkleError> {
             let right = if i + 1 < current.len() {
                 &current[i + 1]
             } else {
-                // Duplicate the last leaf for odd-length layers.
+                // Duplicate the last leaf for odd-length layers: a compatibility contract, changing it invalidates every previously computed root.
                 left
             };
             next.push(combine(left, right)?);
@@ -148,7 +147,7 @@ pub fn proof(tree: &MerkleTree, leaf_idx: usize) -> Result<MerkleProof, MerkleEr
     let mut path: Vec<ProofNode> = Vec::new();
     let mut idx = leaf_idx;
 
-    // Walk up from the leaf layer to the root layer (exclusive — root has no sibling).
+    // Walk up from the leaf layer to the root layer (exclusive - root has no sibling).
     for layer in &tree.layers[..tree.layers.len().saturating_sub(1)] {
         let sibling_idx = if idx.is_multiple_of(2) {
             // idx is left child; sibling is to the right (or duplicate of idx if it doesn't exist)
@@ -180,7 +179,8 @@ pub fn proof(tree: &MerkleTree, leaf_idx: usize) -> Result<MerkleProof, MerkleEr
 ///
 /// Returns `Ok(true)` if the proof is valid, `Ok(false)` if the proof is structurally
 /// valid but does not match the root, and `Err(MerkleError::InvalidHex)` if any
-/// proof node contains a malformed hex string (previously silently hashed empty bytes).
+/// proof node contains a malformed hex string, rejected rather than silently
+/// hashed as empty bytes, which would let a broken proof verify as valid.
 pub fn verify_proof(
     root_hex: &str,
     leaf_content_hash: &str,
@@ -197,7 +197,7 @@ pub fn verify_proof(
         };
     }
 
-    // Constant-time comparison to prevent timing side-channels (TM-4).
+    // Constant-time comparison to prevent timing side-channels.
     let current_bytes = hex::decode(&current).map_err(|_| MerkleError::InvalidHex(current))?;
     let root_bytes =
         hex::decode(root_hex).map_err(|_| MerkleError::InvalidHex(root_hex.to_string()))?;
@@ -205,75 +205,4 @@ pub fn verify_proof(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_single_leaf() {
-        let tree = build_merkle_tree(&["abc123"]).unwrap();
-        let r = root(&tree).unwrap();
-        assert!(!r.is_empty());
-        let p = proof(&tree, 0).unwrap();
-        assert!(verify_proof(&r, "abc123", &p).unwrap());
-    }
-
-    #[test]
-    fn test_even_leaves() {
-        let hashes = ["a", "b", "c", "d"];
-        let tree = build_merkle_tree(&hashes).unwrap();
-        let r = root(&tree).unwrap();
-        for (i, h) in hashes.iter().enumerate() {
-            let p = proof(&tree, i).unwrap();
-            assert!(
-                verify_proof(&r, h, &p).unwrap(),
-                "proof failed for leaf {}",
-                i
-            );
-        }
-    }
-
-    #[test]
-    fn test_odd_leaves() {
-        let hashes = ["a", "b", "c"];
-        let tree = build_merkle_tree(&hashes).unwrap();
-        let r = root(&tree).unwrap();
-        for (i, h) in hashes.iter().enumerate() {
-            let p = proof(&tree, i).unwrap();
-            assert!(
-                verify_proof(&r, h, &p).unwrap(),
-                "proof failed for leaf {}",
-                i
-            );
-        }
-    }
-
-    #[test]
-    fn test_invalid_proof() {
-        let tree = build_merkle_tree(&["real_hash"]).unwrap();
-        let r = root(&tree).unwrap();
-        let p = proof(&tree, 0).unwrap();
-        assert!(!verify_proof(&r, "wrong_hash", &p).unwrap());
-    }
-
-    #[test]
-    fn test_empty_tree() {
-        let tree = build_merkle_tree(&[]).unwrap();
-        assert!(matches!(root(&tree), Err(MerkleError::EmptyTree)));
-    }
-
-    #[test]
-    fn test_malformed_proof_node_returns_err() {
-        let tree = build_merkle_tree(&["hash1", "hash2"]).unwrap();
-        let r = root(&tree).unwrap();
-        let mut p = proof(&tree, 0).unwrap();
-        // Corrupt the proof path with an invalid hex string.
-        p.path[0].hash = "not-valid-hex!!!".to_string();
-        assert!(
-            matches!(
-                verify_proof(&r, "hash1", &p),
-                Err(MerkleError::InvalidHex(_))
-            ),
-            "expected InvalidHex error for malformed proof node"
-        );
-    }
-}
+mod tests;

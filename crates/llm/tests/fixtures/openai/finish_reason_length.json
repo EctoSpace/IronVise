@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl-ReplayFinishLength",
+  "object": "chat.completion",
+  "created": 1761177602,
+  "model": "gpt-6-astra",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"action\":\"read_file\",\"params\":{\"path\":\"server_config.txt\"},\"justifi",
+        "refusal": null
+      },
+      "finish_reason": "length",
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 360,
+    "completion_tokens": 16,
+    "total_tokens": 376
+  }
+}

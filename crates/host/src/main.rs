@@ -1,17 +1,12 @@
 use clap::{Parser, Subcommand};
-use ectoledger::commands;
-use ectoledger::config;
-use ectoledger::db_setup;
-use ectoledger::ledger;
-#[cfg(any(all(target_os = "linux", feature = "sandbox"), windows))]
-use ectoledger::sandbox;
-use ectoledger::secrets;
-use sqlx::postgres::PgPoolOptions;
-use tokio_util::sync::CancellationToken;
+
+mod cli;
+
 use uuid::Uuid;
 
 #[derive(Parser)]
-#[command(name = "ectoledger")]
+#[command(name = "ironvise")]
+#[command(version)]
 #[command(
     about = "Cryptographically verified, state-driven agent framework for automated security auditing"
 )]
@@ -22,6 +17,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Exit 0 when the local Observer answers GET /api/status.
+    ///
+    /// Uses 127.0.0.1 and `ECTO_BIND_PORT` (default 3000). No database and no
+    /// curl: this is the container health check.
+    Health,
+
     /// Run the database, migrations, and Observer dashboard on port 3000 (no agent).
     Serve {
         /// Verify full chain from genesis; otherwise only last 1000 events.
@@ -52,19 +53,9 @@ enum Commands {
         /// Read the key-encryption password from the given file descriptor
         /// instead of the interactive prompt or ECTO_KEY_PASSWORD env var.
         /// More secure than env vars (not visible via /proc, ps, docker inspect).
-        /// Unix only.  Example: `ectoledger audit "..." --key-password-fd 3  3< <(pass show ectoledger)`
+        /// Unix only.  Example: `ironvise audit "..." --key-password-fd 3  3< <(pass show ironvise)`
         #[arg(long)]
         key_password_fd: Option<i32>,
-        /// Automatically anchor the ledger tip to the target chain at this
-        /// interval (in seconds) during the audit.  0 = disabled (default).
-        /// Requires EVM env vars for `ethereum`, or OTS for `bitcoin`.
-        /// This is defense-in-depth: periodic anchoring limits the window
-        /// in which a compromised system could rewrite unanchored history (TM-1e).
-        #[arg(long, default_value_t = 0)]
-        auto_anchor_interval: u64,
-        /// Target chain for auto-anchoring: `bitcoin` or `ethereum`.
-        #[arg(long, default_value = "bitcoin", value_parser = ["bitcoin", "ethereum"])]
-        auto_anchor_chain: String,
     },
 
     /// Replay events for a session (colored output).
@@ -83,6 +74,38 @@ enum Commands {
     VerifySession {
         /// Session UUID.
         session: Uuid,
+        /// Also check the ledger against a certificate exported from this
+        /// session earlier and kept elsewhere. Catches what the database alone
+        /// cannot: events removed behind a rewritten seal, and a session
+        /// re-signed with another key. The certificate must be signed.
+        #[arg(long, value_name = "AUDIT.elc")]
+        against: Option<std::path::PathBuf>,
+        /// With --against: require the certificate to be signed by this
+        /// Ed25519 key (hex), obtained out of band.
+        #[arg(long, value_name = "HEX", requires = "against")]
+        expected_key: Option<String>,
+    },
+
+    /// Survey every session's integrity, read-only. Reports rather than fails.
+    ///
+    /// Written for upgrades: 0.8.0 made `verify-session` bind signatures to
+    /// events (the 0.8.0 changelog, F-1), so run this first to see
+    /// whether any existing session is affected before the stricter check
+    /// starts refusing things.
+    VerifyLedger {
+        /// Print a line for every session, not only the failing ones.
+        #[arg(long)]
+        all: bool,
+
+        /// Exit non-zero when any session fails to verify.
+        ///
+        /// Off by default on purpose: the survey exists to answer "does the
+        /// stricter 0.8.0 check affect anything I hold?", and a tool that
+        /// fails because the answer is yes is answering a different question.
+        /// Turn it on to use the survey as a gate in a script or a CI job,
+        /// where "some session does not verify" has to stop the pipeline.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Export audit report for a session.
@@ -98,9 +121,14 @@ enum Commands {
         /// Skip OpenTimestamps submission when generating a certificate.
         #[arg(long, default_value_t = false)]
         no_ots: bool,
+        /// Read the password for the session's saved signing key from this
+        /// file descriptor (Unix). Otherwise ECTO_KEY_PASSWORD or a prompt;
+        /// blank writes the certificate unsigned.
+        #[arg(long)]
+        key_password_fd: Option<i32>,
     },
 
-    /// Multi-agent orchestration: runs recon / analysis / verify sub-agents with independent ledgers.
+    /// [preview] Multi-agent orchestration: runs recon / analysis / verify sub-agents with independent ledgers.
     Orchestrate {
         /// Audit goal for the orchestrated run.
         #[arg(required = true)]
@@ -113,7 +141,7 @@ enum Commands {
         max_steps: Option<u32>,
     },
 
-    /// Compare two audit sessions (baseline vs current). Outputs remediation evidence.
+    /// [preview] Compare two audit sessions (baseline vs current). Outputs remediation evidence.
     DiffAudit {
         /// Baseline session UUID.
         #[arg(long)]
@@ -126,7 +154,7 @@ enum Commands {
         output: Option<std::path::PathBuf>,
     },
 
-    /// Red-team mode: adversarial agent to test defenses.
+    /// [preview] Red-team mode: adversarial agent to test defenses.
     RedTeam {
         /// UUID of the completed audit session to attack.
         #[arg(long)]
@@ -139,8 +167,8 @@ enum Commands {
         output: Option<std::path::PathBuf>,
     },
 
-    /// Generate a cryptographic SP1 ZK proof of an audit session and embed it in the certificate.
-    /// Compile with `--features zk` to enable proof generation.
+    /// [unavailable in 0.8] SP1 ZK proving withdrawn because of RUSTSEC-2026-0387.
+    /// Use `report --format certificate` for verifiable audit provenance.
     ProveAudit {
         /// Session UUID to prove.
         session: Uuid,
@@ -153,35 +181,119 @@ enum Commands {
         /// Skip OpenTimestamps submission in the generated certificate.
         #[arg(long, default_value_t = false)]
         no_ots: bool,
+        /// Read the password for the session's saved signing key from this
+        /// file descriptor (Unix). Otherwise ECTO_KEY_PASSWORD or a prompt;
+        /// blank writes the certificate unsigned.
+        #[arg(long)]
+        key_password_fd: Option<i32>,
     },
 
-    /// Anchor a session's ledger tip to the Bitcoin timechain via OpenTimestamps,
-    /// or to an EVM-compatible chain via a smart contract call.
+    /// [preview] Timestamp a session's ledger tip with OpenTimestamps.
     AnchorSession {
         /// Session UUID whose ledger tip to anchor.
         session: Uuid,
-        /// Target chain: `bitcoin` (default, via OpenTimestamps) or `ethereum`
-        /// (EVM-compatible — requires EVM_RPC_URL, EVM_CHAIN_ID, EVM_CONTRACT_ADDRESS,
-        /// EVM_PRIVATE_KEY env vars and `--features evm` build flag).
-        #[arg(long, default_value = "bitcoin", value_parser = ["bitcoin", "ethereum"])]
+        /// Timestamp backend. `bitcoin` (OpenTimestamps) is the only one.
+        #[arg(long, default_value = "bitcoin", value_parser = ["bitcoin"])]
         chain: String,
     },
 
-    /// Verify an EctoLedger Audit Certificate (.elc) file.
+    /// Claude Code PreToolUse hook client: reads the hook JSON on stdin,
+    /// asks the Observer to verify the tool call, writes the decision on stdout.
+    ///
+    /// Fail-closed - any error blocks the tool call. Needs ECTOLEDGER_TOKEN,
+    /// and ECTOLEDGER_URL if the Observer is not on http://127.0.0.1:3000.
+    ///
+    /// This ENFORCES: Claude Code honours the deny before the tool runs. Not to
+    /// be confused with `proxy`, which only records.
+    ///
+    /// `ironvise hook install` adds it to Claude Code's settings.
+    Hook {
+        #[command(subcommand)]
+        action: Option<HookAction>,
+    },
+    /// Run an OpenAI-compatible RECORDING proxy in front of a real upstream.
+    ///
+    /// Point any agent's base URL at this and every prompt and completion is
+    /// written to the hash chain. Covers Codex CLI, Cursor, Aider, Continue and
+    /// anything else with a configurable endpoint, with no per-tool work.
+    ///
+    /// This RECORDS ONLY. It cannot block: it sees text, not actions -- it
+    /// never sees a command execute, only a model asking to run one. For
+    /// enforcement use `hook`.
+    Proxy {
+        /// Address to listen on.
+        #[arg(long, default_value = "127.0.0.1:3100")]
+        bind: String,
+        /// Upstream OpenAI-compatible server to forward to.
+        #[arg(long, default_value = "https://api.openai.com")]
+        upstream: String,
+        /// Allow a non-loopback --bind. The proxy has no authentication:
+        /// anyone who can reach it can write to this ledger.
+        #[arg(long, default_value_t = false)]
+        allow_remote: bool,
+    },
+    /// Verify an IronVise Audit Certificate (.elc) file.
     VerifyCertificate {
         /// Path to the .elc certificate file.
         file: std::path::PathBuf,
+        /// Require a signature that verifies. Without this an unsigned
+        /// certificate is reported as internally consistent and exits 0:
+        /// internal consistency is computed from the file's own contents and
+        /// says nothing about who issued it.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+        /// Require the signature to be by this ed25519 public key (hex).
+        /// Implies --strict. Obtain the key out of band - a key read from the
+        /// certificate only tells you that it signed itself.
+        #[arg(long)]
+        expected_key: Option<String>,
+        /// Require a Bitcoin attestation in the OTS stamp. A fresh stamp is a
+        /// calendar server's promise and does not satisfy this.
+        #[arg(long, default_value_t = false)]
+        require_anchor: bool,
+        /// Read the stamp from this .ots file (for example after `ots
+        /// upgrade`) instead of the certificate. It must stamp this tip.
+        #[arg(long, value_name = "FILE")]
+        ots: Option<std::path::PathBuf>,
+        /// Write the certificate's stamp as a .ots file for `ots upgrade`
+        /// and `ots verify`, then verify.
+        #[arg(long, value_name = "FILE")]
+        export_ots: Option<std::path::PathBuf>,
+        /// Require a countersignature by this installation issuer key (hex,
+        /// from `ironvise issuer-key show`). On its own it satisfies --strict.
+        #[arg(long, value_name = "HEX")]
+        issuer: Option<String>,
     },
 
-    /// Decode and verify a W3C VC-JWT issued by EctoLedger.
+    /// List a session's data receipts (what its tools returned, by SHA-256)
+    /// and check files against them. The session must verify first.
+    ///
+    ///   ironvise data-receipts <session> --file config.ini
+    DataReceipts {
+        /// Session UUID.
+        session: Uuid,
+        /// A file to check: does its SHA-256 match a text a tool returned?
+        /// Repeatable; exits 1 when any file matches no receipt.
+        #[arg(long = "file", value_name = "PATH")]
+        files: Vec<std::path::PathBuf>,
+    },
+
+    /// The installation's issuer key, which countersigns every certificate
+    /// this installation exports (offline, no database).
+    IssuerKey {
+        #[command(subcommand)]
+        action: IssuerKeyAction,
+    },
+
+    /// [preview] Decode and verify a W3C VC-JWT issued by IronVise.
     ///
     /// Checks structure, expiry, and (when --issuer-hex is provided) the Ed25519 signature
     /// over the VC payload.  Prints the decoded credential subject to stdout.
     ///
     /// # Examples
     ///
-    ///   ectoledger verify-vc "eyJhbGci..."
-    ///   ectoledger verify-vc "eyJhbGci..." --issuer-hex <hex-encoded verifying key>
+    ///   ironvise verify-vc "eyJhbGci..."
+    ///   ironvise verify-vc "eyJhbGci..." --issuer-hex <hex-encoded verifying key>
     VerifyVc {
         /// The VC-JWT string (three base64url parts separated by `.`).
         jwt: String,
@@ -189,408 +301,166 @@ enum Commands {
         /// When provided, the JWT signature is verified against this key.
         #[arg(long)]
         issuer_hex: Option<String>,
+        /// Who is verifying. A VC carrying `aud` (see ECTO_VC_AUDIENCE) is
+        /// accepted only when this is one of its audiences.
+        #[arg(long)]
+        audience: Option<String>,
+    },
+
+    /// Import NVIDIA OpenShell decision logs (OCSF JSON lines) as signed receipts.
+    ///
+    /// One sealed ledger session per sandbox, every record signed with the
+    /// SHA-256 of its original line, and a signed `.elc` receipt per session
+    /// in --out. Audit-mode allows are recorded as `audit`. Re-importing a log
+    /// adds nothing.
+    ///
+    ///   ironvise import-openshell /var/log/openshell-ocsf.2026-09-29.log
+    ImportOpenshell {
+        /// OCSF JSONL files written by OpenShell.
+        #[arg(required = true)]
+        files: Vec<std::path::PathBuf>,
+        /// Where to write the signed receipts.
+        #[arg(long, default_value = "openshell-receipts")]
+        out: std::path::PathBuf,
+    },
+
+    /// Put IronVise between an MCP client and a stdio MCP server.
+    ///
+    /// Every `tools/call` is judged by the Observer (policy, allowed_mcp_tools,
+    /// the command check on its arguments) and recorded before the server sees
+    /// it; a refused call returns to the model as a tool error. Everything else
+    /// passes through. Fail-closed. Needs ECTOLEDGER_TOKEN (agent role), and
+    /// ECTOLEDGER_URL if the Observer is not on http://127.0.0.1:3000.
+    ///
+    ///   ironvise mcp-proxy --name github -- npx -y @modelcontextprotocol/server-github
+    McpProxy {
+        /// The server's name as policies and allowed_mcp_tools refer to it
+        /// (`mcp:<name>/<tool>`). Letters, digits, `-`, `_`, `.`; no `__`.
+        #[arg(long)]
+        name: String,
+        /// The MCP server command and its arguments, after `--`.
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
+
+    /// Print the webhook signing key for one receiver.
+    ///
+    /// Derived from WEBHOOK_HMAC_SECRET and the receiver's exact URL. Give each
+    /// receiver only its own key: it verifies X-EctoLedger-Signature-V1 and
+    /// cannot sign a delivery another receiver would accept. Offline.
+    ///
+    ///   WEBHOOK_HMAC_SECRET=... ironvise webhook-key --url https://siem.example/hook
+    WebhookKey {
+        /// The receiver URL exactly as configured for the webhook.
+        #[arg(long)]
+        url: String,
     },
 }
 
-/// Returns true when the configured DATABASE_URL uses a SQLite scheme.
-fn is_sqlite_url(url: &str) -> bool {
-    url.starts_with("sqlite:") || url.starts_with("sqlite://")
+#[derive(Subcommand)]
+enum IssuerKeyAction {
+    /// Create the issuer key (issuer.key in ECTO_DATA_DIR, owner-only) and
+    /// print its public key: the one to hand relying parties for --issuer.
+    Init {
+        /// Replace an existing key. Certificates it signed keep verifying
+        /// against its public key; whoever pinned it needs the new one.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Print the issuer's public key.
+    Show,
 }
 
-/// Extract a filesystem path from a SQLite DATABASE_URL.
+#[derive(Subcommand)]
+enum HookAction {
+    /// Add the hook to Claude Code's settings (or Codex's or Antigravity CLI's hooks.json), or update an older one.
+    ///
+    /// Writes .claude/settings.local.json in the project by default (this
+    /// machine, not checked in). Keeps everything else in the file, and never
+    /// adds a second IronVise hook. Then checks the Observer and token.
+    ///
+    ///   ironvise hook install
+    ///   ironvise hook install --shared      # .claude/settings.json, for the team
+    ///   ironvise hook install --user        # ~/.claude/settings.json, every project
+    ///   ironvise hook install --codex       # .codex/hooks.json, for Codex
+    ///   ironvise hook install --antigravity # .agents/hooks.json, for Antigravity CLI
+    Install {
+        /// Write the project's shared .claude/settings.json.
+        #[arg(long, conflicts_with = "user")]
+        shared: bool,
+        /// Write ~/.claude/settings.json, for every project.
+        #[arg(long)]
+        user: bool,
+        /// Install for Codex: .codex/hooks.json in the project, or
+        /// ~/.codex/hooks.json with --user.
+        #[arg(long, conflicts_with = "shared")]
+        codex: bool,
+        /// Install for Antigravity CLI: .agents/hooks.json in the project, or
+        /// ~/.gemini/config/hooks.json with --user.
+        #[arg(long, conflicts_with_all = ["shared", "codex"])]
+        antigravity: bool,
+        /// The project directory (default: the current directory).
+        #[arg(long)]
+        project: Option<std::path::PathBuf>,
+        /// The command Claude Code should run (default: this binary's path + ` hook`).
+        #[arg(long)]
+        command: Option<String>,
+    },
+}
+
+/// Print errors through `Display`, not `Debug`.
 ///
-/// Handles the common variants:
-///   sqlite:ledger.db      → ledger.db
-///   sqlite://ledger.db    → ledger.db
-///   sqlite:///tmp/l.db    → /tmp/l.db
-///   sqlite::memory:       → None  (in-memory, no file)
-fn sqlite_path_from_url(url: &str) -> Option<std::path::PathBuf> {
-    let path_str = if let Some(rest) = url.strip_prefix("sqlite:///") {
-        // sqlite:///tmp/l.db → /tmp/l.db  (absolute path — restore leading slash)
-        format!("/{rest}")
-    } else if let Some(rest) = url.strip_prefix("sqlite://") {
-        rest.to_string()
-    } else if let Some(rest) = url.strip_prefix("sqlite:") {
-        rest.to_string()
-    } else {
-        url.to_string()
-    };
-    if path_str == ":memory:" || path_str.is_empty() {
-        None
-    } else {
-        Some(std::path::PathBuf::from(path_str))
+/// Returning `Result` from `main` renders the error with `Debug`, so every
+/// carefully written multi-line hint in this binary shipped as a single line
+/// of escaped `\n` inside double quotes. Two call sites had already been
+/// hand-patched to work around it, each with a comment explaining why; the
+/// eight-line message `prove-audit` prints on a default build had not, and
+/// that is the one nearly every new user meets first.
+///
+/// One wrapper fixes it for every command, including ones not written yet.
+#[tokio::main]
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => match e.downcast_ref::<cli::exit::ExitWith>() {
+            Some(cli::exit::ExitWith(code)) => std::process::ExitCode::from(*code),
+            None => {
+                eprintln!("Error: {e}");
+                std::process::ExitCode::FAILURE
+            }
+        },
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+async fn run() -> Result<(), cli::BoxError> {
+    // `--version` and `health` must not announce demo settings. Clap exits
+    // from `parse` for `--version` and `--help`, before any of the rest.
     dotenvy::dotenv().ok();
-
-    // Windows: apply Job Object sandbox to the current process.
-    // All child processes inherit KILL_ON_JOB_CLOSE + UI restrictions.
-    // This is done at startup (not per-child) because Windows lacks Unix pre_exec.
-    #[cfg(target_os = "windows")]
-    {
-        let ws = std::env::current_dir().unwrap_or_default();
-        if let Err(e) = sandbox::apply_child_sandbox(&ws) {
-            tracing::error!("Windows Job Object sandbox could not be applied: {}", e);
-            return Err("Aborting: Windows Job Object sandbox could not be applied.".into());
-        }
-    }
-
-    let cli = Cli::parse();
-
-    // ── Offline commands: no database required ─────────────────────────────
-    // Handle commands that are purely local (no DB, no ledger) before
-    // attempting any database connection or migration.
-    match &cli.command {
-        Commands::VerifyCertificate { file } => {
-            commands::report::run_verify_certificate(file)?;
-            return Ok(());
-        }
-        Commands::VerifyVc { jwt, issuer_hex } => {
-            commands::report::run_verify_vc(jwt, issuer_hex.as_deref())?;
-            return Ok(());
-        }
-        _ => {} // fall through to DB setup
-    }
-
-    let configured_url = config::database_url()?;
-
-    // ── Database setup: dispatch by URL scheme ────────────────────────────
-    //
-    // The CLI supports both PostgreSQL and SQLite.  A single `DatabasePool`
-    // is constructed below (one branch per backend) and all subsequent logic
-    // — chain verification, genesis, shutdown wiring, and command dispatch —
-    // runs exactly once against that pool, eliminating the previous fork.
-    //
-    //   postgres://...  → PgPool + Postgres migrations + full command set
-    //   sqlite:...      → SqlitePool (zero infrastructure, limited commands)
-
-    let is_sqlite = is_sqlite_url(&configured_url);
-
-    // ── Guard: reject commands that require PostgreSQL when using SQLite ───
-    if is_sqlite {
-        match &cli.command {
-            Commands::Orchestrate { .. }
-            | Commands::DiffAudit { .. }
-            | Commands::RedTeam { .. }
-            | Commands::Audit { .. }
-            | Commands::ProveAudit { .. }
-            | Commands::AnchorSession { .. } => {
-                return Err("This command requires PostgreSQL. \
-                     SQLite mode does not support this command yet. \
-                     Set DATABASE_URL to a postgres:// URL and try again."
-                    .into());
-            }
-            _ => {}
-        }
-    }
-
-    // ── Backend construction ──────────────────────────────────────────────
-    //
-    // For PostgreSQL: spin up embedded PG if needed, run migrations, seed
-    // the OBSERVER_TOKEN, then wrap in DatabasePool::Postgres.
-    // For SQLite: open (or create) the on-disk file, run SQLite migrations,
-    // then wrap in DatabasePool::Sqlite.
-    let _embedded_pg: Option<db_setup::EmbeddedDb>;
-    let backend: ectoledger::pool::DatabasePool;
-
-    if is_sqlite {
-        _embedded_pg = None;
-        let db_path = sqlite_path_from_url(&configured_url);
-        backend = ectoledger::pool::create_sqlite_pool(&db_path.unwrap_or_else(|| {
-            db_setup::app_data_dir()
-                .join("ectoledger")
-                .join("ledger.db")
-        }))
-        .await?;
-
-        // Seed the current session's OBSERVER_TOKEN as an admin entry in api_tokens
-        // so that Bearer-token auth works out of the box with SQLite (including the
-        // in-memory database used by integration tests).
-        {
-            use sha2::{Digest, Sha256 as Sha2};
-            let legacy_token = config::observer_token();
-            let token_hash = hex::encode(Sha2::digest(legacy_token.as_bytes()));
-            match backend
-                .insert_token(
-                    &token_hash,
-                    "admin",
-                    Some("observer_token (bootstrapped)"),
-                    None,
-                )
-                .await
-            {
-                Ok(_) => {
-                    tracing::info!("OBSERVER_TOKEN registered as admin in api_tokens (SQLite).")
-                }
-                Err(e) => tracing::warn!("Failed to seed OBSERVER_TOKEN into api_tokens: {e}"),
-            }
-        }
-    } else {
-        let result = db_setup::ensure_postgres_ready(&configured_url).await?;
-        let database_url = result.0;
-        _embedded_pg = Some(result.1);
-
-        // Tune pool size to prevent connection exhaustion during multi-agent runs.
-        // Defaults to 2×CPU (min 5, max 50); override with DATABASE_POOL_SIZE env var.
-        let pool_size: u32 = config::database_pool_size();
-        let pg = PgPoolOptions::new()
-            .max_connections(pool_size)
-            .min_connections(1)
-            .idle_timeout(std::time::Duration::from_secs(600))
-            .acquire_timeout(std::time::Duration::from_secs(30))
-            .connect(&database_url)
-            .await?;
-
-        sqlx::query_scalar::<_, i32>("SELECT 1")
-            .fetch_one(&pg)
-            .await?;
-        tracing::info!("Database connected (PostgreSQL).");
-
-        sqlx::migrate!("./migrations").run(&pg).await?;
-
-        // Seed the current session's OBSERVER_TOKEN as an admin entry in api_tokens.
-        // Uses ON CONFLICT so the insert is idempotent: re-using the same token
-        // across restarts is a no-op.
-        {
-            use sha2::{Digest, Sha256 as Sha2};
-            let legacy_token = config::observer_token();
-            let token_hash = hex::encode(Sha2::digest(legacy_token.as_bytes()));
-            match sqlx::query(
-                "INSERT INTO api_tokens (token_hash, role, label) \
-                 VALUES ($1, 'admin', 'observer_token (bootstrapped)') \
-                 ON CONFLICT (token_hash) DO NOTHING",
-            )
-            .bind(&token_hash)
-            .execute(&pg)
-            .await
-            {
-                Ok(_) => tracing::info!("OBSERVER_TOKEN registered as admin in api_tokens."),
-                Err(e) => tracing::warn!("Failed to seed OBSERVER_TOKEN into api_tokens: {e}"),
-            }
-        }
-
-        // ISSUE-19: Load EVM_PRIVATE_KEY into secure memory and scrub from environment.
-        // On Linux the full process environment is readable via /proc/<pid>/environ by any
-        // process with the same UID, and is logged by some container runtimes.
-        if let Some(_evm_key) = secrets::load_env_secret("EVM_PRIVATE_KEY") {
-            tracing::info!(
-                "EVM_PRIVATE_KEY loaded into secure memory and removed from process environment. \
-                 The key will be zeroized when no longer needed."
-            );
-        }
-
-        backend = ectoledger::pool::DatabasePool::Postgres(pg);
-    }
-
-    // ── Shared startup: chain verification ───────────────────────────────
-    let verify_full = match &cli.command {
-        Commands::Serve { verify_full, .. } | Commands::Audit { verify_full, .. } => *verify_full,
-        _ => false,
-    };
-    if let Some((latest_seq, _)) = backend.get_latest().await? {
-        let from = if verify_full {
-            0
+    let args = Cli::parse();
+    if matches!(args.command, Commands::Health) {
+        let code = ectoledger::commands::health::run();
+        return if code == 0 {
+            Ok(())
         } else {
-            (latest_seq - 999).max(0)
+            Err(Box::new(cli::exit::ExitWith(code)))
         };
-        let to = latest_seq;
-        let chain_ok = match &backend {
-            ectoledger::pool::DatabasePool::Postgres(p) => {
-                ledger::verify_chain(p, from, to).await?
-            }
-            ectoledger::pool::DatabasePool::Sqlite(p) => {
-                ledger::sqlite::verify_chain_sqlite(p, from, to).await?
-            }
-        };
-        if !chain_ok {
-            return Err("Ledger chain verification failed: tampering detected.".into());
-        }
     }
-
-    // ── Shared startup: genesis ───────────────────────────────────────────
-    let appended = backend.ensure_genesis().await?;
-    if appended.sequence == 0 {
-        tracing::info!("Genesis block created.");
-    } else {
-        tracing::info!(
-            "Genesis already present; latest sequence = {}.",
-            appended.sequence
-        );
+    cli::startup::prepare()?;
+    if matches!(
+        args.command,
+        Commands::Serve { .. } | Commands::Audit { .. }
+    ) {
+        ectoledger::config::warn_if_insecure_mode();
     }
-
-    let metrics = std::sync::Arc::new(ectoledger::metrics::Metrics::default());
-
-    // ── Platform sandbox: apply seccomp-BPF AFTER database setup ───────────
-    //
-    // The Linux seccomp filter is installed here (after DB setup) rather than
-    // at process start, because embedded PostgreSQL (pg_embed) spawns child
-    // processes via fork()+exec() that inherit the filter via PR_SET_NO_NEW_PRIVS.
-    // PostgreSQL requires System V IPC (shmget, semget, etc.) which are NOT in
-    // the allowlist.  Deferring the filter until after DB setup avoids this.
-    //
-    // The filter still protects all command execution (serve, audit, agent loop)
-    // which is where untrusted input is processed.
-    #[cfg(all(target_os = "linux", feature = "sandbox"))]
-    {
-        if let Err(e) = sandbox::apply_main_process_seccomp() {
-            tracing::error!("Linux seccomp filter failed to apply: {}", e);
-            return Err("Aborting: main-process seccomp sandbox could not be applied.".into());
-        }
+    if cli::offline::run(&args.command).await? {
+        return Ok(());
     }
-
-    // ── Graceful shutdown: wire Ctrl-C to the cancellation token ─────────
-    let cancel = CancellationToken::new();
-    {
-        let shutdown_cancel = cancel.clone();
-        tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                tracing::info!("SIGINT received — initiating graceful shutdown");
-                shutdown_cancel.cancel();
-            }
-        });
-    }
-
-    // ── Command dispatch (single block for both backends) ─────────────────
-    match cli.command {
-        Commands::Serve { .. } => match backend {
-            ectoledger::pool::DatabasePool::Postgres(pg) => {
-                commands::serve::run(pg, metrics, cancel).await?;
-            }
-            other => {
-                commands::serve::run_with_pool(other, metrics, cancel).await?;
-            }
-        },
-        Commands::Audit {
-            prompt,
-            policy,
-            no_guard,
-            no_guard_confirmed,
-            interactive,
-            key_password_fd,
-            auto_anchor_interval,
-            auto_anchor_chain,
-            ..
-        } => {
-            // SQLite is guarded above; safe to unwrap the Postgres pool.
-            let pg = backend.as_pg().expect("Audit requires PostgreSQL").clone();
-            commands::audit::run(
-                pg,
-                metrics,
-                commands::audit::AuditArgs {
-                    prompt,
-                    policy,
-                    no_guard,
-                    no_guard_confirmed,
-                    interactive,
-                    key_password_fd,
-                    auto_anchor_interval,
-                    auto_anchor_chain,
-                },
-            )
-            .await?;
-        }
-        Commands::Replay {
-            session,
-            to_step,
-            inject_observation,
-        } => match &backend {
-            ectoledger::pool::DatabasePool::Postgres(pg) => {
-                commands::report::run_replay(pg, session, to_step, inject_observation).await?;
-            }
-            ectoledger::pool::DatabasePool::Sqlite(sq) => {
-                commands::report::run_replay_sqlite(sq, session, to_step, inject_observation)
-                    .await?;
-            }
-        },
-        Commands::VerifySession { session } => match &backend {
-            ectoledger::pool::DatabasePool::Postgres(pg) => {
-                commands::report::run_verify_session(pg, session).await?;
-            }
-            ectoledger::pool::DatabasePool::Sqlite(sq) => {
-                commands::report::run_verify_session_sqlite(sq, session).await?;
-            }
-        },
-        Commands::Orchestrate {
-            goal,
-            policy,
-            max_steps,
-        } => {
-            // SQLite is guarded above; safe to unwrap the Postgres pool.
-            let pg = backend
-                .as_pg()
-                .expect("Orchestrate requires PostgreSQL")
-                .clone();
-            commands::orchestrate::run_orchestrate(
-                &ectoledger::pool::DatabasePool::Postgres(pg),
-                goal,
-                policy,
-                max_steps,
-            )
-            .await?;
-        }
-        Commands::DiffAudit {
-            baseline,
-            current,
-            output,
-        } => {
-            let pg = backend
-                .as_pg()
-                .expect("DiffAudit requires PostgreSQL")
-                .clone();
-            commands::orchestrate::run_diff_audit(&pg, baseline, current, output).await?;
-        }
-        Commands::RedTeam {
-            target_session,
-            attack_budget,
-            output,
-        } => {
-            let pg = backend
-                .as_pg()
-                .expect("RedTeam requires PostgreSQL")
-                .clone();
-            commands::orchestrate::run_red_team(&pg, target_session, attack_budget, output).await?;
-        }
-        Commands::ProveAudit {
-            session,
-            policy,
-            output,
-            no_ots,
-        } => {
-            let pg = backend
-                .as_pg()
-                .expect("ProveAudit requires PostgreSQL")
-                .clone();
-            commands::prove::run(&pg, session, policy, output, no_ots).await?;
-        }
-        Commands::AnchorSession { session, chain } => {
-            let pg = backend
-                .as_pg()
-                .expect("AnchorSession requires PostgreSQL")
-                .clone();
-            commands::anchor::run(&pg, session, chain).await?;
-        }
-        Commands::Report {
-            session,
-            format,
-            output,
-            no_ots,
-        } => match &backend {
-            ectoledger::pool::DatabasePool::Postgres(pg) => {
-                commands::report::run_report(pg, session, format, output, no_ots).await?;
-            }
-            ectoledger::pool::DatabasePool::Sqlite(sq) => {
-                commands::report::run_report_sqlite(sq, session, format, output, no_ots).await?;
-            }
-        },
-        // VerifyCertificate and VerifyVc are handled above (early return, no DB).
-        Commands::VerifyCertificate { .. } | Commands::VerifyVc { .. } => unreachable!(),
-    }
-
-    Ok(())
+    let cli::database::Ledger {
+        pool,
+        embedded: _embedded,
+    } = cli::database::open(&args.command).await?;
+    cli::database::check(&args.command, &pool).await?;
+    cli::startup::confine()?;
+    let cancel = cli::startup::cancel_on_ctrl_c();
+    cli::dispatch::run(args.command, pool, cancel).await
 }

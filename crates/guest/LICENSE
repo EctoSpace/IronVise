@@ -1,0 +1,14 @@
+This crate is licensed under the Business Source License 1.1, the same licence
+as the rest of IronVise. The full text is in the LICENSE file at the root of
+this repository, and its terms, including the Change Date, the Change License
+and the Additional Use Grant for verification, apply here unchanged.
+
+It is stated separately because this crate is excluded from the Cargo workspace
+(it targets a different architecture and is built only by the host's build.rs
+under a feature flag), so it does not inherit `license.workspace = true`. Both
+crates previously declared Apache-2.0 while compiling into the BUSL-licensed
+host binary; the maintainer resolved that contradiction in favour of BUSL-1.1.
+
+The client SDKs under sdk/ remain separately Apache-2.0. That separation is
+deliberate: a client library that talks to a BUSL server should not carry the
+server's licence.

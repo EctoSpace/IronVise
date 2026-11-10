@@ -8,16 +8,18 @@ pub mod compensation;
 pub mod config;
 pub mod db_setup;
 pub mod enclave;
+pub mod encrypted_reasoning;
 pub mod error;
-pub use ectoledger_compliance::evm_anchor;
 pub mod executor;
 pub mod guard;
 pub mod guard_process;
-#[cfg(feature = "keychain")]
-pub mod keychain;
+pub mod guard_worker;
+pub mod issuer;
 pub mod ledger;
 pub mod llm;
+pub mod logfmt;
 pub mod metrics;
+pub mod migrations;
 pub use ectoledger_llm::ollama_setup as ollama;
 pub mod orchestrator;
 pub use ectoledger_compliance::ots;
@@ -26,6 +28,7 @@ pub mod output_scanner;
 pub mod pg_notify;
 pub mod policy;
 pub mod pool;
+pub mod receipts;
 pub mod red_team;
 pub mod report;
 pub use ectoledger_sandbox::sandbox;
@@ -37,6 +40,7 @@ pub mod snapshot;
 #[cfg(feature = "sqlcipher")]
 pub mod sqlcipher;
 pub mod tripwire;
+pub mod verify;
 pub use ectoledger_compliance::verifiable_credential;
 pub mod wakeup;
 pub mod webhook;
@@ -48,7 +52,6 @@ pub use ectoledger_core::hash;
 pub use ectoledger_core::intent;
 pub use ectoledger_core::merkle;
 
-// ─── Convenience top-level API ────────────────────────────────────────────────
 // These thin wrappers let `gui/src-tauri` and external integrators call
 // `ectoledger::start_server(...)` / `::run_migrations(...)` without
 // reaching into internal module paths.
@@ -107,7 +110,7 @@ pub async fn start_server_with_llm(
         let _ = tokio::signal::ctrl_c().await;
         shutdown_token.cancel();
     });
-    let approval_state = Arc::new(approvals::ApprovalState::new());
+    let approval_state = Arc::new(approvals::ApprovalState::for_pool(&pool));
     let (made_router, _task_tracker) = server::router_with_approval_state(
         pool,
         metrics_handle,
@@ -131,7 +134,7 @@ pub async fn start_server_with_llm(
 /// This is **idempotent**: migrations already applied are skipped automatically.
 pub async fn run_migrations(pool: &pool::DatabasePool) -> Result<(), sqlx::migrate::MigrateError> {
     match pool {
-        pool::DatabasePool::Postgres(pg) => sqlx::migrate!("./migrations").run(pg).await,
-        pool::DatabasePool::Sqlite(sq) => sqlx::migrate!("./migrations/sqlite").run(sq).await,
+        pool::DatabasePool::Postgres(pg) => migrations::migrate_postgres(pg).await,
+        pool::DatabasePool::Sqlite(sq) => migrations::migrate_sqlite(sq).await,
     }
 }

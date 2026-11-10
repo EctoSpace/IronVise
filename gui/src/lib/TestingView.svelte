@@ -1,5 +1,5 @@
 <!--
-  TestingView — Testing & Verification tab.
+  TestingView - Testing & Verification tab.
 
   Unified testing menu with collapsible Happy Path and Sad Path sections.
   In demo mode, sessions use the mock LLM backend so no external LLM
@@ -8,9 +8,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Button, Card, Badge, Input } from "./ui";
+  import { Badge, Button, Card, FieldLabel, Input, Panel } from "./ui";
+  import TestSection from "./testing/TestSection.svelte";
   import adversarialTests from "./adversarial-tests.json";
   import happyPathTests from "./happy-path-tests.json";
+  import { detectDemoMode, fetchSessionVc, verifySessionVc, listSessions } from "./backend";
 
   let _alive = true;
   onDestroy(() => { _alive = false; });
@@ -21,45 +23,8 @@
 
   let { serverUrl }: Props = $props();
 
-  // ── Demo mode detection ──────────────────────────────────────────────────
   let demoMode = $state(false);
 
-  async function detectDemoMode() {
-    try {
-      const dm = await invoke<boolean>("is_demo_mode");
-      if (dm) demoMode = true;
-    } catch { /* ignore — may fail in browser preview */ }
-    // Fallback: ask the backend's /api/status endpoint
-    if (!demoMode && serverUrl) {
-      try {
-        const res = await fetch(`${serverUrl}/api/status`, { signal: AbortSignal.timeout(5000) });
-        if (res.ok) {
-          const body = await res.json();
-          if (body?.demo_mode) demoMode = true;
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  // ── Section collapse state ───────────────────────────────────────────────
-  let happyExpanded = $state(true);
-  let sadExpanded = $state(true);
-
-  // ── Whitelist panel ──────────────────────────────────────────────────────
-  let whitelistPatterns = $state<string[]>([]);
-  let newPattern = $state("");
-  function addPattern() {
-    const p = newPattern.trim();
-    if (p && !whitelistPatterns.includes(p)) {
-      whitelistPatterns = [...whitelistPatterns, p];
-      newPattern = "";
-    }
-  }
-  function removePattern(p: string) {
-    whitelistPatterns = whitelistPatterns.filter((x) => x !== p);
-  }
-
-  // ── Happy path tests ────────────────────────────────────────────────────
   type TestStatus = "idle" | "running" | "pass" | "fail";
   let happyStatuses = $state<Record<string, TestStatus>>({});
   let happyResults  = $state<Record<string, string>>({});
@@ -101,7 +66,6 @@
           : `Session did not complete ✗ (status: ${finalStatus})`,
       };
 
-      // Refresh sessions list after test completes
       loadSessions();
     } catch (e) {
       happyStatuses = { ...happyStatuses, [testId]: "fail" };
@@ -115,7 +79,6 @@
     }
   }
 
-  // ── Adversarial tests (sad path) ─────────────────────────────────────────
   let testStatuses = $state<Record<string, TestStatus>>({});
   let testResults  = $state<Record<string, string>>({});
   let sadSessionIds = $state<Record<string, string>>({});
@@ -156,7 +119,6 @@
           : `Prompt was NOT blocked ✗ (status: ${finalStatus})`,
       };
 
-      // Refresh sessions list after test completes
       loadSessions();
     } catch (e) {
       testStatuses = { ...testStatuses, [testId]: "fail" };
@@ -170,7 +132,6 @@
     }
   }
 
-  // ── VC Verification ──────────────────────────────────────────────────────
   let sessionId = $state("");
   let loading = $state(false);
   let vcData = $state<Record<string, unknown> | null>(null);
@@ -184,8 +145,7 @@
   async function loadSessions() {
     loadingSessions = true;
     try {
-      const data = await invoke<Array<{ id: string; goal: string; status: string }>>("get_sessions");
-      sessions = data ?? [];
+      sessions = await listSessions();
     } catch {
       sessions = [];
     }
@@ -194,7 +154,7 @@
 
   onMount(() => {
     loadSessions();
-    detectDemoMode();
+    detectDemoMode(serverUrl).then((v) => { if (_alive && v) demoMode = true; });
   });
 
   /** The currently selected session object (if any). */
@@ -209,8 +169,7 @@
     vcData = null;
     verifyResult = null;
     try {
-      const vc = await invoke<Record<string, unknown>>("get_session_vc", { sessionId });
-      vcData = vc;
+      vcData = await fetchSessionVc(sessionId);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -222,8 +181,8 @@
     loading = true;
     error = "";
     try {
-      const result = await invoke<{ valid: boolean; message: string }>("verify_session_vc", { sessionId });
-      verifyResult = result;
+      const result = await verifySessionVc(sessionId);
+      verifyResult = { valid: !!result.valid, message: result.message ?? result.error ?? "" };
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -247,51 +206,19 @@
 
   <!-- Demo mode banner -->
   {#if demoMode}
-    <div class="flex items-center gap-3 p-4 rounded-xl bg-amber-400/5 border border-amber-400/20">
-      <div class="shrink-0 w-8 h-8 rounded-lg bg-amber-400/10 flex items-center justify-center">
-        <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div class="flex items-center gap-3 p-4 rounded-xl bg-warning/5 border border-warning/20">
+      <div class="shrink-0 w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center">
+        <svg class="w-4 h-4 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
       </div>
       <div>
-        <p class="text-sm font-medium text-amber-400">Demo Mode</p>
-        <p class="text-xs text-text-muted mt-0.5">Sessions use the mock LLM backend — no external LLM service required. The agent pipeline runs for real and produces genuine Verifiable Credentials.</p>
+        <p class="text-sm font-medium text-warning">Demo Mode</p>
+        <p class="text-xs text-text-muted mt-0.5">Sessions use the mock LLM backend - no external LLM service required. The agent pipeline runs for real and produces genuine Verifiable Credentials.</p>
       </div>
     </div>
   {/if}
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       WHITELIST PANEL (full width)
-       ═══════════════════════════════════════════════════════════════════════ -->
-  <Card title="Prompt Whitelist" subtitle="Patterns always allowed through regardless of policy">
-    {#snippet children()}
-      <div class="space-y-3">
-        {#if whitelistPatterns.length === 0}
-          <p class="text-sm text-text-muted">No whitelist patterns. Add a pattern to permit matching prompts.</p>
-        {:else}
-          <div class="flex flex-wrap gap-2">
-            {#each whitelistPatterns as p}
-              <span class="flex items-center gap-1 bg-surface-elevated border border-border rounded-full px-3 py-1 text-xs font-mono text-text-primary">
-                {p}
-                <button class="ml-1 text-text-muted hover:text-danger transition-colors" onclick={() => removePattern(p)} aria-label="Remove pattern">&times;</button>
-              </span>
-            {/each}
-          </div>
-        {/if}
-        <div class="flex flex-wrap gap-2">
-          <Input bind:value={newPattern} placeholder="e.g. *.internal.*" class="flex-1 min-w-[180px]"
-            onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') addPattern(); }} />
-          <Button variant="secondary" onclick={addPattern} disabled={!newPattern.trim()}>
-            {#snippet children()}Add{/snippet}
-          </Button>
-        </div>
-      </div>
-    {/snippet}
-  </Card>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       SESSION & VERIFICATION (full width, always visible)
-       ═══════════════════════════════════════════════════════════════════════ -->
   <div class="space-y-4">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <!-- Session picker -->
@@ -361,17 +288,17 @@
 
               <!-- Info message for non-completed sessions -->
               {#if selectedSession && !canHaveVC}
-                <div class="flex items-center gap-2.5 p-3 rounded-lg bg-amber-400/5 border border-amber-400/20">
-                  <svg class="w-4 h-4 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="flex items-center gap-2.5 p-3 rounded-lg bg-warning/5 border border-warning/20">
+                  <svg class="w-4 h-4 text-warning shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                   </svg>
                   <p class="text-xs text-text-secondary">
                     {#if selectedSession.status === "aborted"}
-                      This session was <strong class="text-danger">aborted</strong> by the tripwire — no Verifiable Credential is issued for blocked sessions. This is expected for adversarial/sad-path tests.
+                      This session was <strong class="text-danger">aborted</strong> by the tripwire - no Verifiable Credential is issued for blocked sessions. This is expected for adversarial/sad-path tests.
                     {:else if selectedSession.status === "failed"}
-                      This session <strong class="text-danger">failed</strong> — no Verifiable Credential was generated. Only successfully completed sessions produce a VC.
+                      This session <strong class="text-danger">failed</strong> - no Verifiable Credential was generated. Only successfully completed sessions produce a VC.
                     {:else}
-                      This session is <strong class="text-accent">{selectedSession.status}</strong> — a Verifiable Credential is only available after completion.
+                      This session is <strong class="text-accent-text">{selectedSession.status}</strong> - a Verifiable Credential is only available after completion.
                     {/if}
                   </p>
                 </div>
@@ -407,46 +334,46 @@
         <Card title="Integrity Checks">
           {#snippet children()}
             <div class="grid grid-cols-2 gap-4">
-              <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-                <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Merkle Root</div>
+              <Panel>
+                <FieldLabel spacing="below">Merkle Root</FieldLabel>
                 <div class="text-sm text-text-primary font-mono">
                   {#if vcData && (vcData as Record<string, unknown>).merkle_root}
                     {String((vcData as Record<string, unknown>).merkle_root).slice(0, 24)}…
                   {:else}
-                    <span class="text-text-muted">—</span>
+                    <span class="text-text-muted"> - </span>
                   {/if}
                 </div>
-              </div>
-              <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-                <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Signature</div>
+              </Panel>
+              <Panel>
+                <FieldLabel spacing="below">Signature</FieldLabel>
                 <div class="text-sm text-text-primary font-mono">
                   {#if vcData && (vcData as Record<string, unknown>).proof}
                     <Badge variant="success" dot>{#snippet children()}Signed{/snippet}</Badge>
                   {:else}
-                    <span class="text-text-muted">—</span>
+                    <span class="text-text-muted"> - </span>
                   {/if}
                 </div>
-              </div>
-              <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-                <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Events</div>
+              </Panel>
+              <Panel>
+                <FieldLabel spacing="below">Events</FieldLabel>
                 <div class="text-sm text-text-primary">
                   {#if vcData && (vcData as Record<string, unknown>).event_count}
                     {(vcData as Record<string, unknown>).event_count}
                   {:else}
-                    <span class="text-text-muted">—</span>
+                    <span class="text-text-muted"> - </span>
                   {/if}
                 </div>
-              </div>
-              <div class="p-5 rounded-xl bg-surface-elevated border border-border-muted/15">
-                <div class="text-xs text-text-muted uppercase tracking-wider mb-1">Policy Hash</div>
+              </Panel>
+              <Panel>
+                <FieldLabel spacing="below">Policy Hash</FieldLabel>
                 <div class="text-sm text-text-primary font-mono">
                   {#if vcData && (vcData as Record<string, unknown>).policy_hash}
                     {String((vcData as Record<string, unknown>).policy_hash).slice(0, 24)}…
                   {:else}
-                    <span class="text-text-muted">—</span>
+                    <span class="text-text-muted"> - </span>
                   {/if}
                 </div>
-              </div>
+              </Panel>
             </div>
           {/snippet}
         </Card>
@@ -454,162 +381,27 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       HAPPY PATH SECTION
-       ═══════════════════════════════════════════════════════════════════════ -->
-  <div class="rounded-2xl border border-border-muted/20 bg-surface overflow-hidden">
-    <!-- Section header (click to toggle) -->
-    <button
-      class="w-full flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
-      onclick={() => (happyExpanded = !happyExpanded)}
-    >
-      <div class="flex items-center gap-3">
-        <svg
-          class="w-4 h-4 text-text-muted transition-transform duration-200 {happyExpanded ? 'rotate-90' : ''}"
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        >
-          <polyline points="9 18 15 12 9 6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div class="flex items-center gap-2">
-          <div class="w-2.5 h-2.5 rounded-full bg-success"></div>
-          <h2 class="text-base font-semibold text-text-primary">Happy Path Tests</h2>
-        </div>
-        <span class="text-xs text-text-muted">({happyPathTests.length} tests)</span>
-      </div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div role="toolbar" tabindex="-1" class="flex items-center gap-3" onclick={(e: MouseEvent) => e.stopPropagation()}>
-        <Button variant="primary" onclick={runAllHappyTests}>
-          {#snippet children()}Run All{/snippet}
-        </Button>
-      </div>
-    </button>
+  <TestSection
+    title="Happy Path Tests"
+    tone="success"
+    tests={happyPathTests}
+    statuses={happyStatuses}
+    results={happyResults}
+    sessionIds={happySessionIds}
+    gridClass="grid grid-cols-1 md:grid-cols-2 gap-5"
+    onrun={runHappyTest}
+    onrunall={runAllHappyTests}
+    onselectsession={selectSession}
+  />
 
-    <!-- Collapsible content -->
-    {#if happyExpanded}
-      <div class="px-6 pb-6 space-y-6 border-t border-border-muted/10">
-        <!-- Test cards grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 pt-5">
-          {#each happyPathTests as test}
-            {@const status = happyStatuses[test.id] ?? "idle"}
-            {@const resultText = happyResults[test.id] ?? ""}
-            {@const hasSession = !!happySessionIds[test.id]}
-            <div class="bg-surface-elevated rounded-2xl p-5 flex flex-col gap-3.5 border border-border-muted/10 hover:border-border-muted/25 transition-all duration-200">
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <p class="text-xs text-text-muted uppercase tracking-wider mb-0.5">{test.category}</p>
-                  <h3 class="text-sm font-semibold text-text-primary">{test.name}</h3>
-                </div>
-                {#if status === "idle"}
-                  <Badge variant="default">{#snippet children()}Idle{/snippet}</Badge>
-                {:else if status === "running"}
-                  <Badge variant="accent" dot>{#snippet children()}Running{/snippet}</Badge>
-                {:else if status === "pass"}
-                  <Badge variant="success" dot>{#snippet children()}Pass{/snippet}</Badge>
-                {:else}
-                  <Badge variant="danger" dot>{#snippet children()}Fail{/snippet}</Badge>
-                {/if}
-              </div>
-              <p class="text-xs text-text-secondary leading-relaxed">{test.description}</p>
-              <div class="bg-surface rounded-xl border border-border-muted/15 p-3.5">
-                <p class="text-[10px] text-text-muted uppercase tracking-wider mb-1">Prompt</p>
-                <p class="text-xs font-mono text-text-primary break-words">{test.prompt}</p>
-              </div>
-              {#if resultText}
-                <p class="text-xs {status === 'pass' ? 'text-success' : 'text-danger'}">{resultText}</p>
-              {/if}
-              <div class="flex gap-2">
-                <Button
-                  variant={status === "running" ? "secondary" : "primary"}
-                  onclick={() => runHappyTest(test.id, test.prompt)}
-                  loading={status === "running"}
-                >
-                  {#snippet children()}{status === "running" ? "Running…" : "Run Test"}{/snippet}
-                </Button>
-                {#if hasSession && status === "pass"}
-                  <Button variant="secondary" onclick={() => selectSession(happySessionIds[test.id])}>
-                    {#snippet children()}Select Session{/snippet}
-                  </Button>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       SAD PATH SECTION
-       ═══════════════════════════════════════════════════════════════════════ -->
-  <div class="rounded-2xl border border-border-muted/20 bg-surface overflow-hidden">
-    <!-- Section header (click to toggle) -->
-    <button
-      class="w-full flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
-      onclick={() => (sadExpanded = !sadExpanded)}
-    >
-      <div class="flex items-center gap-3">
-        <svg
-          class="w-4 h-4 text-text-muted transition-transform duration-200 {sadExpanded ? 'rotate-90' : ''}"
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        >
-          <polyline points="9 18 15 12 9 6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div class="flex items-center gap-2">
-          <div class="w-2.5 h-2.5 rounded-full bg-danger"></div>
-          <h2 class="text-base font-semibold text-text-primary">Sad Path Tests</h2>
-        </div>
-        <span class="text-xs text-text-muted">({adversarialTests.length} tests)</span>
-      </div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div role="toolbar" tabindex="-1" class="flex items-center gap-3" onclick={(e: MouseEvent) => e.stopPropagation()}>
-        <Button variant="danger" onclick={runAllAdversarialTests}>
-          {#snippet children()}Run All{/snippet}
-        </Button>
-      </div>
-    </button>
-
-    <!-- Collapsible content -->
-    {#if sadExpanded}
-      <div class="px-6 pb-6 border-t border-border-muted/10">
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pt-5">
-          {#each adversarialTests as test}
-            {@const status = testStatuses[test.id] ?? "idle"}
-            {@const resultText = testResults[test.id] ?? ""}
-            <div class="bg-surface-elevated rounded-2xl p-5 flex flex-col gap-3.5 border border-border-muted/10 hover:border-border-muted/25 transition-all duration-200">
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <p class="text-xs text-text-muted uppercase tracking-wider mb-0.5">{test.category}</p>
-                  <h3 class="text-sm font-semibold text-text-primary">{test.name}</h3>
-                </div>
-                {#if status === "idle"}
-                  <Badge variant="default">{#snippet children()}Idle{/snippet}</Badge>
-                {:else if status === "running"}
-                  <Badge variant="accent" dot>{#snippet children()}Running{/snippet}</Badge>
-                {:else if status === "pass"}
-                  <Badge variant="success" dot>{#snippet children()}Pass{/snippet}</Badge>
-                {:else}
-                  <Badge variant="danger" dot>{#snippet children()}Fail{/snippet}</Badge>
-                {/if}
-              </div>
-              <p class="text-xs text-text-secondary leading-relaxed">{test.description}</p>
-              <div class="bg-surface rounded-xl border border-border-muted/15 p-3.5">
-                <p class="text-[10px] text-text-muted uppercase tracking-wider mb-1">Prompt</p>
-                <p class="text-xs font-mono text-text-primary break-words">{test.prompt}</p>
-              </div>
-              {#if resultText}
-                <p class="text-xs {status === 'pass' ? 'text-success' : 'text-danger'}">{resultText}</p>
-              {/if}
-              <Button
-                variant={status === "running" ? "secondary" : "primary"}
-                onclick={() => runAdversarialTest(test.id, test.prompt)}
-                loading={status === "running"}
-              >
-                {#snippet children()}{status === "running" ? "Running…" : "Run Test"}{/snippet}
-              </Button>
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  </div>
+  <TestSection
+    title="Sad Path Tests"
+    tone="danger"
+    tests={adversarialTests}
+    statuses={testStatuses}
+    results={testResults}
+    gridClass="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+    onrun={runAdversarialTest}
+    onrunall={runAllAdversarialTests}
+  />
 </div>

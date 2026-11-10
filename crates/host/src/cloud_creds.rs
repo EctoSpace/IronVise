@@ -84,7 +84,7 @@ mod tests {
             env_vars: std::collections::HashMap::new(),
         };
         let json = serde_json::to_string(&creds).unwrap();
-        write!(File::create(tmp.path()).unwrap(), "{}", json).unwrap();
+        write!(File::create(tmp.path()).unwrap(), "{json}").unwrap();
         unsafe { std::env::set_var("AGENT_CLOUD_CREDS_FILE", tmp.path()) };
         let loaded = load_cloud_creds().expect("should load");
         assert_eq!(loaded.name, "foo");

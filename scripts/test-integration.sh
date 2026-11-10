@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the EctoLedger integration test suite against an ephemeral PostgreSQL container.
+# Run the IronVise integration test suite against an ephemeral PostgreSQL container.
 #
 # Usage:
 #   ./scripts/test-integration.sh [extra cargo test args...]
@@ -14,7 +14,6 @@
 
 set -euo pipefail
 
-# Check for Docker or Podman before attempting to use docker compose
 DOCKER_CMD="docker"
 if ! command -v docker >/dev/null 2>&1; then
     if command -v podman >/dev/null 2>&1; then

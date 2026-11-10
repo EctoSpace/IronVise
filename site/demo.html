@@ -3,13 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EctoLedger Demo | See What It Does</title>
-  <meta name="description" content="Watch EctoLedger record AI decisions, enforce guardrails, and export tamper-proof audit certificates in real time." />
-  <meta property="og:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta property="og:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta name="twitter:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
+  <title>IronVise Demo | See What It Does</title>
+  <meta name="description" content="Watch IronVise record AI decisions, deny unsafe tool calls through the Claude Code hook, and export tamper-evident audit certificates. The recording proxy observes prompts only - it does not enforce." />
   <link rel="icon" href="images/ectoSpace-Logo.webp" type="image/webp" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -163,6 +158,7 @@
         <a href="features.html" class="transition-colors hover:text-white">Features</a>
         <a href="changelog.html" class="transition-colors hover:text-white">Changelog</a>
         <a href="demo.html" aria-current="page" class="text-white transition-colors hover:text-white">Demo</a>
+        <a href="verify.html" class="transition-colors hover:text-white">Verify</a>
       </nav>
       <div class="flex items-center gap-2">
         <a
@@ -195,6 +191,7 @@
         <a href="features.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Features</a>
         <a href="changelog.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Changelog</a>
         <a href="demo.html" aria-current="page" class="rounded-lg bg-white/[0.06] px-3 py-2 text-white transition-colors hover:bg-white/[0.08]">Demo</a>
+        <a href="verify.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Verify</a>
       </div>
     </nav>
   </header>
@@ -203,13 +200,13 @@
     <section class="pt-36 sm:pt-44">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="text-center">
-          <img src="images/el-logo.webp" alt="EctoLedger" class="reveal mx-auto h-16 w-auto sm:h-20" />
-          <p class="reveal mt-6 font-mono text-xs uppercase tracking-[0.22em] text-brand-300">See EctoLedger in action</p>
+          <img src="images/ironvise-mark.webp" alt="IronVise" class="reveal mx-auto h-16 w-auto sm:h-20" />
+          <p class="reveal mt-6 font-mono text-xs uppercase tracking-[0.22em] text-brand-300">See IronVise in action</p>
           <h1 class="reveal mx-auto mt-4 max-w-4xl font-display text-4xl leading-[1.05] tracking-tight sm:text-6xl">
             Watch how AI actions become provable audit evidence
           </h1>
           <p class="reveal mx-auto mt-6 max-w-3xl text-lg leading-relaxed text-zinc-300">
-            EctoLedger records every AI decision, blocks unsafe actions before execution, and produces tamper-proof certificates you can verify offline.
+            IronVise records every AI decision, blocks unsafe actions before execution, and produces tamper-evident certificates you can verify offline.
           </p>
         </div>
 
@@ -228,7 +225,7 @@
             <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">What this demo shows in under 10 minutes</h2>
             <ul class="mt-4 space-y-2 text-sm text-zinc-300">
               <li>How agent actions are captured in a tamper-evident timeline.</li>
-              <li>How guardrails and Tripwire block unsafe operations before execution.</li>
+              <li>How the Claude Code hook and Tripwire can block unsafe operations before execution - and that the recording proxy only observes.</li>
               <li>How evidence is exported for independent verification.</li>
             </ul>
             <div class="mt-5 flex flex-wrap gap-2 text-xs text-zinc-300">
@@ -251,10 +248,10 @@
               What you need depends on how you run the demo. At minimum, choose one path below.
             </p>
             <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-              <li><strong class="text-white">Rust 1.94+</strong>: All native launcher and CLI demos (rustup recommended).</li>
-              <li><strong class="text-white">Docker</strong>: Only for the Docker demo (<code class="font-mono text-xs rounded bg-white/10 px-1">docker-compose.demo.yml</code>). Not required for <code class="font-mono text-xs rounded bg-white/10 px-1">--demo</code> launcher mode or SQLite.</li>
-              <li><strong class="text-white">LLM backend</strong>: At least one: Ollama (local), OpenAI, or Anthropic. For <code class="font-mono text-xs rounded bg-white/10 px-1">audit</code> and <code class="font-mono text-xs rounded bg-white/10 px-1">orchestrate</code> the primary LLM must be reachable; the Guard uses <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_LLM_BACKEND</code> / <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_LLM_MODEL</code> when <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_REQUIRED=true</code>.</li>
-              <li><strong class="text-white">Node.js 20+ and npm</strong>: Only if you build or run the Tauri 2 desktop GUI (<code class="font-mono text-xs rounded bg-white/10 px-1">gui/</code>). The Docker demo exposes the REST API and Observer only; no GUI.</li>
+              <li><strong class="text-white">Rust 1.94+</strong> - All native launcher and CLI demos (rustup recommended).</li>
+              <li><strong class="text-white">Docker</strong> - Only for the Docker demo (<code class="font-mono text-xs rounded bg-white/10 px-1">docker-compose.demo.yml</code>). Not required for <code class="font-mono text-xs rounded bg-white/10 px-1">make demo</code>, SQLite, or embedded PostgreSQL.</li>
+              <li><strong class="text-white">LLM backend</strong> - At least one: Ollama (local), OpenAI, or Anthropic. For <code class="font-mono text-xs rounded bg-white/10 px-1">audit</code> and <code class="font-mono text-xs rounded bg-white/10 px-1">orchestrate</code> the primary LLM must be reachable; the Guard uses <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_LLM_BACKEND</code> / <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_LLM_MODEL</code> when <code class="font-mono text-xs rounded bg-white/10 px-1">GUARD_REQUIRED=true</code>.</li>
+              <li><strong class="text-white">Node.js 20.19+ and npm</strong> - Only if you build or run the Tauri 2 desktop GUI (<code class="font-mono text-xs rounded bg-white/10 px-1">gui/</code>). The Docker demo exposes the REST API and Observer only; no GUI.</li>
             </ul>
           </div>
         </section>
@@ -264,7 +261,7 @@
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">How to use demo mode</p>
             <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">Different ways to run the demo</h2>
             <p class="mt-4 text-sm text-zinc-300">
-              You can try EctoLedger with zero config (embedded Postgres, auto LLM detection) or use Docker for a fully containerized stack.
+              You can try IronVise with zero config (embedded Postgres, auto LLM detection) or use Docker for a fully containerized stack.
             </p>
             <p class="mt-2 text-xs text-zinc-400">
               Demo defaults prioritize fast evaluation. Before production rollout, explicitly configure guard, policy, backend mode, and webhook settings.
@@ -272,33 +269,30 @@
 
             <div class="mt-6 space-y-6">
               <div class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-                <h3 class="font-display text-lg text-white">1. Launcher with <code class="font-mono text-sm rounded bg-white/10 px-1.5">--demo</code> (zero config)</h3>
+                <h3 class="font-display text-lg text-white">1. <code class="font-mono text-sm rounded bg-white/10 px-1.5">make demo</code> (zero config)</h3>
                 <p class="mt-2 text-sm text-zinc-300">
-                  The native launcher starts an isolated embedded PostgreSQL instance on a separate port, auto-detects your LLM (OpenAI / Anthropic / Ollama), and sets <code class="font-mono text-xs rounded bg-white/10 px-1">ECTO_DEMO_MODE=true</code> so the backend uses a separate demo database. No manual DB or API key setup required.
+                  Starts the Observer dashboard against a local SQLite ledger with <code class="font-mono text-xs rounded bg-white/10 px-1">ECTO_DEMO_MODE=1</code>. No Docker, no PostgreSQL, and no API key required - the ledger file is created on first run.
                 </p>
-                <pre class="mt-4 p-4 rounded-xl bg-ink-950/80 font-mono text-xs text-zinc-200 overflow-x-auto"><code># macOS
-./ectoledger-mac --demo
-
-# Linux
-./ectoledger-linux --demo
+                <pre class="mt-4 p-4 rounded-xl bg-ink-950/80 font-mono text-xs text-zinc-200 overflow-x-auto"><code># macOS / Linux
+make demo
 
 # Windows (PowerShell)
-.\ectoledger-win.ps1 -demo</code></pre>
-                <p class="mt-3 text-xs text-zinc-400">First run: pg-embed Postgres (~30 MB) and optionally Ollama + qwen2.5:0.5b (~500 MB) download once. Data lives in <code class="font-mono">~/.local/share/ectoledger/postgres-demo</code> (Linux) or <code class="font-mono">~/Library/Application Support/ectoledger/postgres-demo</code> (macOS). Use <code class="font-mono">--reset-db --demo</code> to wipe demo data.</p>
+.\ironvise-win.ps1 -demo</code></pre>
+                <p class="mt-3 text-xs text-zinc-400">Equivalent to <code class="font-mono">ECTO_DEMO_MODE=1 DATABASE_URL=sqlite://ectoledger-demo.db cargo run --release -p ectoledger -- serve</code>. The ledger lives in <code class="font-mono">ectoledger-demo.db</code> in the repository root; delete that file to wipe demo data. Demo mode is insecure by design - see <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/getting-started/running-securely.md" class="text-aqua-300 hover:text-aqua-200 underline">running securely</a> before any real deployment.</p>
               </div>
 
               <div class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-                <h3 class="font-display text-lg text-white">2. Launcher without <code class="font-mono text-sm rounded bg-white/10 px-1.5">--demo</code> (default stack)</h3>
+                <h3 class="font-display text-lg text-white">2. <code class="font-mono text-sm rounded bg-white/10 px-1.5">make start</code> (desktop GUI)</h3>
                 <p class="mt-2 text-sm text-zinc-300">
-                  Run the normal stack: backend + Tauri GUI. Uses your configured <code class="font-mono text-xs rounded bg-white/10 px-1">DATABASE_URL</code> (or default Docker Postgres) and LLM. Good for development and real audits.
+                  Runs the Tauri desktop app, which starts its own Observer backend in-process - no separate server to manage. Uses your configured <code class="font-mono text-xs rounded bg-white/10 px-1">DATABASE_URL</code> and LLM. Good for development and real audits. Use <code class="font-mono text-xs rounded bg-white/10 px-1">make backend</code> for the server alone.
                 </p>
-                <pre class="mt-4 p-4 rounded-xl bg-ink-950/80 font-mono text-xs text-zinc-200 overflow-x-auto"><code>./ectoledger-mac    # or ectoledger-linux / ectoledger-win.ps1</code></pre>
+                <pre class="mt-4 p-4 rounded-xl bg-ink-950/80 font-mono text-xs text-zinc-200 overflow-x-auto"><code>make start          # macOS / Linux - Windows: .\ironvise-win.ps1</code></pre>
               </div>
 
               <div class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
                 <h3 class="font-display text-lg text-white">3. Docker demo (no Rust or Node)</h3>
                 <p class="mt-2 text-sm text-zinc-300">
-                  One command pulls the pre-built image and starts PostgreSQL 17, Ollama, and EctoLedger. Open <strong>http://localhost:3000</strong> for the Observer dashboard. No Tauri GUI in Docker. Use the launcher with <code class="font-mono text-xs rounded bg-white/10 px-1">--demo</code> for the full desktop experience.
+                  One command pulls the pre-built image and starts PostgreSQL 17, Ollama, and IronVise. Open <strong>http://localhost:3000</strong> for the Observer dashboard. No Tauri GUI in Docker - use <code class="font-mono text-xs rounded bg-white/10 px-1">make start</code> for the full desktop experience.
                 </p>
                 <pre class="mt-4 p-4 rounded-xl bg-ink-950/80 font-mono text-xs text-zinc-200 overflow-x-auto"><code>docker compose -f docker-compose.demo.yml up</code></pre>
                 <p class="mt-3 text-xs text-zinc-400">To reset: <code class="font-mono">docker compose -f docker-compose.demo.yml down -v</code></p>
@@ -307,13 +301,13 @@
               <div class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
                 <h3 class="font-display text-lg text-white">4. SQLite + <code class="font-mono text-sm rounded bg-white/10 px-1.5">serve</code> (no Docker)</h3>
                 <p class="mt-2 text-sm text-zinc-300">
-                  For a minimal local dashboard with no external database, set <code class="font-mono text-xs rounded bg-white/10 px-1">DATABASE_URL=sqlite://ledger.db</code> and run <code class="font-mono text-xs rounded bg-white/10 px-1">cargo run -- serve</code>. SQLite mode does not support <code class="font-mono text-xs rounded bg-white/10 px-1">audit</code>, <code class="font-mono text-xs rounded bg-white/10 px-1">orchestrate</code>, or <code class="font-mono text-xs rounded bg-white/10 px-1">anchor-session</code>; use it for viewing sessions and exporting reports from existing data.
+                  For a local dashboard or CLI audit with no external database, set <code class="font-mono text-xs rounded bg-white/10 px-1">DATABASE_URL=sqlite://ledger.db</code> and run <code class="font-mono text-xs rounded bg-white/10 px-1">cargo run -- serve</code> (or <code class="font-mono text-xs rounded bg-white/10 px-1">audit</code>, <code class="font-mono text-xs rounded bg-white/10 px-1">report</code>, <code class="font-mono text-xs rounded bg-white/10 px-1">verify-session</code>, <code class="font-mono text-xs rounded bg-white/10 px-1">anchor-session</code>). Only multi-agent <code class="font-mono text-xs rounded bg-white/10 px-1">orchestrate</code>, <code class="font-mono text-xs rounded bg-white/10 px-1">diff-audit</code>, and <code class="font-mono text-xs rounded bg-white/10 px-1">red-team</code> require PostgreSQL.
                 </p>
               </div>
             </div>
 
             <p class="mt-6 text-sm text-zinc-400">
-              Full details: <a href="https://github.com/EctoSpace/EctoLedger/" class="text-aqua-300 hover:text-aqua-200 underline">Zero-Config Demo</a> and <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/demo-README.md" class="text-aqua-300 hover:text-aqua-200 underline">Demo Readme</a> on GitHub.
+              Full details: <a href="https://github.com/EctoSpace/EctoLedger/" class="text-aqua-300 hover:text-aqua-200 underline">Zero-Config Demo</a> and <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/getting-started/demo.md" class="text-aqua-300 hover:text-aqua-200 underline">Demo Readme</a> on GitHub.
             </p>
           </div>
         </section>
@@ -354,11 +348,11 @@
         <div id="showcase" class="reveal mesh-border glass mt-12 rounded-[28px] p-3 shadow-glow sm:mt-16 sm:p-4">
           <div class="overflow-hidden rounded-[22px] border border-white/10 bg-ink-900/80">
             <img
-              src="marketing_assets/videos/gui_demo.gif"
-              alt="EctoLedger GUI demo"
+              src="marketing_assets/videos/ironvise_gui_demo.gif"
+              alt="IronVise GUI demo"
               class="zoomable w-full"
               loading="eager"
-              data-lightbox-src="marketing_assets/videos/gui_demo.gif"
+              data-lightbox-src="marketing_assets/videos/ironvise_gui_demo.gif"
               data-lightbox-type="image"
             />
           </div>
@@ -370,36 +364,36 @@
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="reveal mb-10 text-center">
           <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Feature Clips</p>
-          <h2 class="mt-4 font-display text-3xl tracking-tight sm:text-5xl">What EctoLedger actually does</h2>
+          <h2 class="mt-4 font-display text-3xl tracking-tight sm:text-5xl">What IronVise actually does</h2>
         </div>
 
         <div class="grid gap-4 lg:grid-cols-2">
           <article class="reveal glass rounded-3xl p-4 sm:p-5">
             <img
-              src="marketing_assets/videos/ectoledger_demo.gif"
-              alt="EctoLedger demo gif"
+              src="marketing_assets/videos/ironvise_audit_demo.gif"
+              alt="IronVise demo gif"
               class="zoomable w-full rounded-2xl border border-white/10"
               loading="lazy"
-              data-lightbox-src="marketing_assets/videos/ectoledger_demo.gif"
+              data-lightbox-src="marketing_assets/videos/ironvise_audit_demo.gif"
               data-lightbox-type="image"
             />
-            <h3 class="mt-4 font-display text-xl">An AI agent audit from start to finish</h3>
-            <p class="mt-2 text-sm text-zinc-300">See the workflow from first prompt to verifiable completion record.</p>
+            <h3 class="mt-4 font-display text-xl">Explore an audit trail</h3>
+            <p class="mt-2 text-sm text-zinc-300">Walk through recorded actions, decisions, and verification using demonstration data.</p>
           </article>
 
           <article class="reveal glass rounded-3xl p-4 sm:p-5">
             <video
-              src="marketing_assets/videos/ectoledger_demo.mp4"
+              src="marketing_assets/videos/ironvise_audit_demo.mp4"
               autoplay
               muted
               loop
               playsinline
               class="zoomable w-full rounded-2xl border border-white/10"
-              data-lightbox-src="marketing_assets/videos/ectoledger_demo.mp4"
+              data-lightbox-src="marketing_assets/videos/ironvise_audit_demo.mp4"
               data-lightbox-type="video"
             ></video>
-            <h3 class="mt-4 font-display text-xl">The full workflow: task, decisions, guardrails, certificate</h3>
-            <p class="mt-2 text-sm text-zinc-300">Watch each stage and how the final evidence is produced.</p>
+            <h3 class="mt-4 font-display text-xl">Audit evidence in the current interface</h3>
+            <p class="mt-2 text-sm text-zinc-300">Inspect example policy decisions, data receipts, and session verification in IronVise 0.8.</p>
           </article>
         </div>
       </div>
@@ -430,12 +424,12 @@
             <p class="px-1 pb-1 pt-3 text-sm text-zinc-300">Write rules that govern what your AI is allowed to do.</p>
           </article>
           <article class="reveal glass rounded-2xl p-3">
-            <img src="marketing_assets/screenshots/gui_5_metrics.png" alt="Metrics screen" class="zoomable w-full rounded-xl border border-white/10" data-lightbox-src="marketing_assets/screenshots/gui_5_metrics.png" data-lightbox-type="image" loading="lazy" />
+            <img src="marketing_assets/screenshots/gui_5_metrics.png" alt="Prometheus metrics screen" class="zoomable w-full rounded-xl border border-white/10" data-lightbox-src="marketing_assets/screenshots/gui_5_metrics.png" data-lightbox-type="image" loading="lazy" />
             <p class="px-1 pb-1 pt-3 text-sm text-zinc-300">Monitor AI agent behavior and reliability in real time.</p>
           </article>
           <article class="reveal glass rounded-2xl p-3">
-            <img src="marketing_assets/screenshots/gui_6_active_audit.png" alt="Active audit screen" class="zoomable w-full rounded-xl border border-white/10" data-lightbox-src="marketing_assets/screenshots/gui_6_active_audit.png" data-lightbox-type="image" loading="lazy" />
-            <p class="px-1 pb-1 pt-3 text-sm text-zinc-300">Watch the 4-layer guard evaluate each action as it happens.</p>
+            <img src="marketing_assets/screenshots/gui_6_active_audit.png" alt="Live feed screen" class="zoomable w-full rounded-xl border border-white/10" data-lightbox-src="marketing_assets/screenshots/gui_6_active_audit.png" data-lightbox-type="image" loading="lazy" />
+            <p class="px-1 pb-1 pt-3 text-sm text-zinc-300">Watch the pre-execution checks evaluate each action as it happens.</p>
           </article>
         </div>
       </div>
@@ -447,7 +441,7 @@
           <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Next step</p>
           <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">Ready to run your first audit?</h2>
           <p class="mt-4 max-w-3xl text-sm text-zinc-300 sm:text-base">
-            Start with Quick Start for setup, or review the latest release notes before integrating EctoLedger.
+            Start with Quick Start for setup, or review the latest release notes before integrating IronVise.
           </p>
           <div class="mt-6 flex flex-wrap gap-3">
             <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-zinc-200">Start Quickstart</a>
@@ -463,9 +457,9 @@
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div class="glass flex flex-col items-center justify-between gap-4 rounded-2xl px-6 py-5 text-sm text-zinc-400 md:flex-row">
         <div class="flex items-center gap-2">
-          <img src="images/el-logo.webp" alt="EctoSpace" class="h-7 w-auto max-w-[100px] object-contain" />
+          <img src="images/ironvise-mark.webp" alt="IronVise" class="h-7 w-auto max-w-[100px] object-contain" />
           <span class="text-zinc-500">·</span>
-          <span>EctoLedger</span>
+          <span>IronVise</span>
         </div>
         <p>&copy; 2026 EctoSpace</p>
       </div>

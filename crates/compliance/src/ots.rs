@@ -1,4 +1,4 @@
-// OpenTimestamps integration — shared between `certificate.rs` and the `anchor-session` CLI command.
+// OpenTimestamps integration - shared between `certificate.rs` and the `anchor-session` CLI command.
 //
 // Submits a SHA-256 digest (hex) to the public OTS aggregator pool and returns
 // the raw (incomplete) binary stamp. The stamp is stored hex-encoded in certificates
@@ -44,4 +44,24 @@ pub async fn submit_ots_stamp(ledger_tip_hash: &str) -> Result<Vec<u8>, OtsError
     }
     let bytes = resp.bytes().await.map_err(OtsError::Http)?;
     Ok(bytes.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `submit_ots_stamp` decodes the hex digest before it does any network
+    // I/O, so an invalid digest is testable without a mock server or a real
+    // connection to the aggregator pool.
+    #[tokio::test]
+    async fn an_invalid_hex_digest_is_rejected_before_any_network_call() {
+        let err = submit_ots_stamp("not hex").await.unwrap_err();
+        assert!(matches!(err, OtsError::InvalidHex(_)), "{err}");
+    }
+
+    #[tokio::test]
+    async fn an_odd_length_hex_digest_is_rejected() {
+        let err = submit_ots_stamp("abc").await.unwrap_err();
+        assert!(matches!(err, OtsError::InvalidHex(_)), "{err}");
+    }
 }

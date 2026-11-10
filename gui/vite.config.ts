@@ -16,9 +16,13 @@ export default defineConfig(() => ({
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
+  // 3. never auto-open a browser - `make start` is the desktop window; opening
+  //    http://localhost:1420 shows a fake "Connection Error" because isTauri()
+  //    is false in Chrome/Safari.
   server: {
     port: 1420,
     strictPort: true,
+    open: false,
     // Proxy /api and /metrics to the backend so requests that accidentally
     // reach the Vite dev server get forwarded instead of returning an HTML 404.
     proxy: {
@@ -32,19 +36,21 @@ export default defineConfig(() => ({
       },
     },
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
+      // 4. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
   },
-  // 4. Explicitly set the build output directory so tauri.conf.json frontendDist
+  // 5. Explicitly set the build output directory so tauri.conf.json frontendDist
   //    ("../dist") always points to the correct location regardless of Vite version
   //    defaults.  Without this, Vite could resolve to a different directory and the
   //    Tauri production bundle would fail to find the frontend assets.
   build: {
     outDir: "dist",
-    // Tauri uses WebKit on macOS; target ensures compatible output
-    target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
-    minify: !process.env.TAURI_ENV_DEBUG ? ("esbuild" as const) : false,
+    // WebView2 on Windows; on macOS the WebKit of the oldest supported
+    // release, macOS 11 (tauri.conf.json minimumSystemVersion), which is
+    // Safari 14: the first with BigInt literals, which tailwind-variants uses.
+    target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari14",
+    minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
 }));

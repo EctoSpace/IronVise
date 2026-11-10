@@ -21,7 +21,8 @@ pub enum BlockingTaskError {
     Inner(String),
 }
 
-/// Async wrapper for SHA-256 hashing.
+/// Async wrapper for the chain hash, [`hash::sha256_hex`]: SHA-256, or BLAKE3
+/// under `hash-blake3`.
 ///
 /// Offloads `sha256_hex()` to the blocking thread pool.
 /// Returns an error instead of panicking if the blocking task fails.
@@ -46,23 +47,26 @@ pub async fn sha256_pair_async(a: Vec<u8>, b: Vec<u8>) -> Result<String, Blockin
         })
 }
 
-/// Async wrapper for content hash computation.
+/// Async wrapper for canonical (v2) content hash computation.
 ///
-/// Used in the hot path: every event in the ledger loop.
 /// Offloads to blocking thread pool to keep executor responsive.
+/// `created_at` must be the RFC 3339 rendering of the event's
+/// microsecond-truncated creation timestamp - the same value the write
+/// path stores, so verification reproduces the identical input.
 pub async fn compute_content_hash_async(
     previous_hash: String,
     sequence: i64,
     payload_json: String,
     session_id: Option<String>,
+    created_at: String,
 ) -> Result<String, BlockingTaskError> {
     tokio::task::spawn_blocking(move || {
-        hash::compute_content_hash(
+        hash::compute_content_hash_v2(
             &previous_hash,
             sequence,
             &payload_json,
             session_id.as_deref(),
-            None,
+            &created_at,
         )
     })
     .await
@@ -133,8 +137,9 @@ mod tests {
         let result = sha256_hex_async(b"test".to_vec())
             .await
             .expect("sha256 failed");
-        // sha256("test") = 9f86d081...
-        assert!(result.len() == 64);
+        assert_eq!(result, hash::sha256_hex(b"test"));
+        // sha256("test") in a default build.
+        #[cfg(not(feature = "hash-blake3"))]
         assert_eq!(
             result,
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
@@ -153,10 +158,27 @@ mod tests {
     async fn test_compute_content_hash_async() {
         let genesis_hash =
             "0000000000000000000000000000000000000000000000000000000000000000".to_string();
-        let result = compute_content_hash_async(genesis_hash, 0, r#"{"test":1}"#.to_string(), None)
-            .await
-            .expect("content hash failed");
+        let result = compute_content_hash_async(
+            genesis_hash.clone(),
+            0,
+            r#"{"test":1}"#.to_string(),
+            None,
+            "2025-01-01T00:00:00.123456+00:00".to_string(),
+        )
+        .await
+        .expect("content hash failed");
         assert!(result.len() == 64);
+        // Must equal the canonical v2 formula exactly.
+        assert_eq!(
+            result,
+            hash::compute_content_hash_v2(
+                &genesis_hash,
+                0,
+                r#"{"test":1}"#,
+                None,
+                "2025-01-01T00:00:00.123456+00:00",
+            )
+        );
     }
 
     #[tokio::test]

@@ -68,10 +68,10 @@ pub struct SessionRow {
 pub enum EventPayload {
     Genesis {
         message: String,
-        /// Random hex nonce ensuring each ledger's genesis event is unique (TM-2c).
+        /// Random hex nonce ensuring each ledger's genesis event is unique.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         nonce: Option<String>,
-        /// Hex-encoded Ed25519 verifying key of the session that owns this ledger (TM-2c).
+        /// Hex-encoded Ed25519 verifying key of the session that owns this ledger.
         /// Binds the genesis event to a specific signing key so it cannot be replayed
         /// into a different session with a different key.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,7 +124,7 @@ pub enum EventPayload {
     Anchor {
         ledger_tip_hash: String,
         ots_proof_hex: String,
-        /// Filled once the OTS stamp is confirmed on the blockchain.
+        /// Filled once the OTS stamp is confirmed in a Bitcoin block.
         bitcoin_block_height: Option<u64>,
     },
     /// Automatic signing-key rotation: a new Ed25519 keypair has been generated.
@@ -137,7 +137,7 @@ pub enum EventPayload {
         /// Monotonically increasing rotation counter (1 = first rotation, 2 = second, …).
         rotation_index: u64,
     },
-    /// Explicit revocation of an Ed25519 signing key (TM-3f).
+    /// Explicit revocation of an Ed25519 signing key.
     /// Once recorded, verifiers MUST reject any event signed by the revoked
     /// key that has a sequence number greater than this event's sequence.
     KeyRevocation {
@@ -162,6 +162,66 @@ pub enum EventPayload {
         backend: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+    },
+
+    // ── Control decisions ────────────────────────────────────────────────────
+    //
+    // GuardDenial and TripwireRejection are typed events rather than
+    // `Thought { content: "Guard denied: …" }` prose, because enumerating
+    // refusals by pattern-matching a string prefix is not an audit trail
+    // anyone can rely on. EU AI Act Article 12(2)(a) asks for records of
+    // "events relevant for identifying situations that may result in the
+    // system presenting a risk" - a refused action is the clearest such
+    // event a guarded system produces, so it gets a type.
+    //
+    // Both variants are appended BEFORE the action could execute, so they record
+    // something that did not happen. See docs/compliance/eu-ai-act-article12.md.
+    /// The semantic guard refused a proposed action.
+    GuardDenial {
+        /// Name of the refused action, when the intent parsed far enough to have one.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action: Option<String>,
+        /// Reason reported by the guard.
+        reason: String,
+        /// `true` when the decision prevented execution, `false` when the action
+        /// was only flagged and allowed to proceed. Recorded explicitly because a
+        /// log line saying "denied" is not by itself evidence that nothing ran.
+        enforced: bool,
+    },
+    /// A tripwire, policy rule, or prompt scan rejected a proposed action.
+    TripwireRejection {
+        /// Name of the rejected action; `None` for prompt-level scans, which run
+        /// before any action exists.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action: Option<String>,
+        /// Reason reported by the rejecting check.
+        reason: String,
+        /// Where in the pipeline the rejection happened: `prompt_scan`,
+        /// `validation`, or `policy`.
+        stage: String,
+        /// `true` when the decision prevented execution. See `GuardDenial::enforced`.
+        enforced: bool,
+    },
+    /// What a tool returned, by hash: evidence of exactly which data the agent
+    /// received. Recorded after the call; the data itself is never stored.
+    DataReceipt {
+        /// The tool as the client names it (`Read`, `mcp:files/read_text_file`).
+        tool: String,
+        /// What was read, when the call names it: a path, a URL, a query.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        /// The client's id for the call (`tool_use_id`, the JSON-RPC id), which
+        /// links the receipt to the decision recorded before the call.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        call_id: Option<String>,
+        /// SHA-256 of the whole response as canonical JSON (keys sorted, compact).
+        response_sha256: String,
+        /// SHA-256 of each text the agent received (file contents, command
+        /// output, page text, MCP text blocks): what a holder of the data can
+        /// check with `sha256sum`.
+        text_sha256: Vec<String>,
+        /// Total UTF-8 bytes of those texts.
+        text_bytes: u64,
     },
 }
 
@@ -199,3 +259,18 @@ pub struct RestoredState {
     pub snapshot_payload: serde_json::Value,
     pub replayed_events: Vec<LedgerEventRow>,
 }
+
+// ── Drift gate ────────────────────────────────────────────────────────────────
+//
+// The `EventPayload` enum, `docs/reference/schema.md`, and the GUI's webhook filter list
+// drifted apart once already, and the failure was silent in both directions:
+// the docs described a webhook default that was right while the GUI offered ten
+// filter names of which seven did not exist, so a webhook configured through the
+// UI matched nothing and forwarded no events to the SIEM. Nothing failed; the
+// SIEM was just quiet.
+//
+// These tests derive the authoritative lists from the Rust source and fail when
+// either the documentation or the GUI diverges.
+
+#[cfg(test)]
+mod drift;

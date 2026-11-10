@@ -1,0 +1,90 @@
+//! Fixture generator — runs at the v0.6.4 tree state ONLY.
+//!
+//! Writes an authentic period SQLite ledger so that later releases can prove
+//! they still verify it. The point is that every byte here is produced by
+//! v0.6.4's own serialisation, hashing and signing code: a fixture regenerated
+//! by the release under test would prove nothing.
+//!
+//! At this revision `append_event_sqlite` hashes with
+//! `compute_content_hash(previous_hash, sequence, payload_json)` — the legacy
+//! v1 scheme, binding neither `session_id` nor `created_at`. That is precisely
+//! the fallback path 0.8.0's multi-scheme verifier has to keep working.
+//!
+//!   ECTO_FIXTURE_OUT=/path/to/ledger.sqlite \
+//!     cargo test -p ectoledger --test gen_fixture -- --nocapture
+
+use ectoledger::ledger::sqlite::{SqliteLedger, append_event_sqlite, create_session_sqlite};
+use ectoledger::schema::EventPayload;
+
+#[tokio::test]
+async fn generate_v064_fixture() {
+    let out = std::env::var("ECTO_FIXTURE_OUT").expect("set ECTO_FIXTURE_OUT");
+    let _ = std::fs::remove_file(&out);
+
+    let ledger = SqliteLedger::connect(&format!("sqlite:{out}?mode=rwc"))
+        .await
+        .expect("open sqlite");
+    let pool = &ledger.0;
+
+    let (session, key) = create_session_sqlite(
+        pool,
+        "Audit server_config.txt for misconfigurations",
+        "ollama",
+        "mistral",
+        Some("9f8e7d6c5b4a39281716151413121110ffeeddccbbaa99887766554433221100"),
+        None,
+    )
+    .await
+    .expect("create session");
+
+    let sid = Some(session.id);
+    let k = Some(&key);
+
+    // A realistic short run. The exact contents matter less than the shapes:
+    // the fixture exists to pin serialisation and hashing, not behaviour.
+    let events = vec![
+        EventPayload::Genesis {
+            message: "ledger initialised".to_string(),
+        },
+        EventPayload::PromptInput {
+            content: "Audit server_config.txt for misconfigurations".to_string(),
+        },
+        EventPayload::Thought {
+            content: "Reading the config file to identify misconfigurations.".to_string(),
+        },
+        EventPayload::Action {
+            name: "read_file".to_string(),
+            params: serde_json::json!({ "path": "server_config.txt" }),
+        },
+        EventPayload::Observation {
+            content: "PermitRootLogin yes\nPort 22".to_string(),
+        },
+        // The old, unstructured refusal shape. 0.8.0 introduces typed
+        // guard_denial / tripwire_rejection events, so this line is the reason
+        // the fixture matters: prose denials written by v0.6.4 must keep
+        // verifying after the enum gained variants.
+        EventPayload::Thought {
+            content: "Guard denied: command outside the stated audit goal".to_string(),
+        },
+        EventPayload::Thought {
+            content: "Sufficient evidence gathered; completing.".to_string(),
+        },
+    ];
+
+    for payload in &events {
+        append_event_sqlite(pool, payload, sid, k)
+            .await
+            .expect("append");
+    }
+
+    let (seq, tip) = ectoledger::ledger::sqlite::get_latest_sqlite(pool)
+        .await
+        .expect("latest")
+        .expect("non-empty");
+
+    println!("FIXTURE_PATH={out}");
+    println!("FIXTURE_SESSION={}", session.id);
+    println!("FIXTURE_EVENTS={}", events.len());
+    println!("FIXTURE_TIP_SEQUENCE={seq}");
+    println!("FIXTURE_TIP_HASH={tip}");
+}

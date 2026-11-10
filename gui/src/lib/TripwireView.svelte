@@ -1,21 +1,41 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { Button, ListEditor, Switch, SaveBar } from "./ui";
 
-  let config = $state<{
+  interface TripwireConfig {
     allowed_paths?: string[];
     allowed_domains?: string[];
     banned_command_patterns?: string[];
     min_justification_length?: number;
     require_https?: boolean;
-  } | null>(null);
-  let allowedPathsText = $state("");
-  let allowedDomainsText = $state("");
+    saved?: boolean;
+  }
+
+  let config = $state<TripwireConfig | null>(null);
+  let allowedPaths = $state<string[]>([]);
+  let allowedDomains = $state<string[]>([]);
   let bannedPatterns = $state<string[]>([]);
-  let newPatternInput = $state("");
+  let minJustification = $state(5);
+  let requireHttps = $state(true);
   let error = $state("");
   let saveError = $state("");
+  let saveSuccess = $state("");
   let saving = $state(false);
+  /** The payload as last loaded or saved; `dirty` is "it differs". */
+  let snapshot = $state("");
+
+  function payload() {
+    const minLen = Number(minJustification);
+    return {
+      allowed_paths: [...allowedPaths],
+      allowed_domains: [...allowedDomains],
+      banned_command_patterns: [...bannedPatterns],
+      min_justification_length: Number.isNaN(minLen) || minLen < 0 ? 5 : Math.min(500, Math.floor(minLen)),
+      require_https: requireHttps,
+    };
+  }
+  const dirty = $derived(!!config && JSON.stringify(payload()) !== snapshot);
 
   onMount(load);
 
@@ -23,15 +43,14 @@
     if (!isTauri()) return;
     try {
       const data = await invoke<unknown>("get_tripwire_config");
-      config = data && typeof data === "object" && !Array.isArray(data)
-        ? (data as Record<string, unknown>) as { allowed_paths?: string[]; allowed_domains?: string[]; banned_command_patterns?: string[]; min_justification_length?: number; require_https?: boolean }
-        : null;
+      config = data && typeof data === "object" && !Array.isArray(data) ? (data as TripwireConfig) : null;
       if (config) {
-        allowedPathsText = (config.allowed_paths ?? []).join("\n");
-        allowedDomainsText = (config.allowed_domains ?? []).join("\n");
+        allowedPaths = [...(config.allowed_paths ?? [])];
+        allowedDomains = [...(config.allowed_domains ?? [])];
         bannedPatterns = [...(config.banned_command_patterns ?? [])];
-        if (config.min_justification_length == null) config.min_justification_length = 5;
-        if (config.require_https == null) config.require_https = true;
+        minJustification = config.min_justification_length ?? 5;
+        requireHttps = config.require_https ?? true;
+        snapshot = JSON.stringify(payload());
       }
       error = "";
       saveError = "";
@@ -40,219 +59,211 @@
     }
   }
 
-  function fromLines(s: string): string[] {
-    return s
-      .split("\n")
-      .map((x) => x.trim())
-      .filter((x) => x.length > 0);
-  }
-
-  function addBannedPattern() {
-    const trimmed = newPatternInput.trim();
-    if (trimmed && !bannedPatterns.includes(trimmed)) {
-      bannedPatterns = [...bannedPatterns, trimmed];
-      newPatternInput = "";
+  /** A pattern must compile: a broken one would refuse nothing, silently. */
+  function validatePattern(v: string): string | null {
+    try {
+      new RegExp(v);
+      return null;
+    } catch {
+      return "Not a valid regular expression.";
     }
   }
 
-  let editingIndex = $state<number | null>(null);
-  let editingValue = $state("");
-  let editInputRef = $state<HTMLInputElement | null>(null);
-
-  $effect(() => {
-    if (editingIndex !== null) {
-      const timer = setTimeout(() => {
-        editInputRef?.focus();
-        editInputRef?.select();
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  });
-
-  function startEdit(index: number) {
-    editingIndex = index;
-    editingValue = bannedPatterns[index] ?? "";
+  function validateDomain(v: string): string | null {
+    if (/^https?:\/\//i.test(v)) return "A host name only, without the scheme.";
+    if (/[\s/]/.test(v)) return "A host name only, without paths or spaces.";
+    return null;
   }
 
-  function commitEdit() {
-    if (editingIndex === null) return;
-    const trimmed = editingValue.trim();
-    if (trimmed) {
-      const next = [...bannedPatterns];
-      next[editingIndex] = trimmed;
-      bannedPatterns = next;
-    }
-    editingIndex = null;
-    editingValue = "";
-  }
-
-  function cancelEdit() {
-    editingIndex = null;
-    editingValue = "";
-  }
-
-  async function removeBannedPattern(pattern: string) {
-    if (!confirm(`Remove banned pattern "${pattern}"?`)) return;
-    bannedPatterns = bannedPatterns.filter((p) => p !== pattern);
+  function validatePath(v: string): string | null {
+    if (!v.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(v)) return "An absolute path.";
+    return null;
   }
 
   async function save() {
     if (!isTauri() || !config) return;
     saving = true;
     saveError = "";
+    saveSuccess = "";
     try {
-      const minLen = Number(config.min_justification_length);
-      const payload = {
-        allowed_paths: fromLines(allowedPathsText),
-        allowed_domains: fromLines(allowedDomainsText),
-        banned_command_patterns: [...bannedPatterns],
-        min_justification_length: Number.isNaN(minLen) || minLen < 0 ? 5 : Math.min(500, Math.floor(minLen)),
-        require_https: config.require_https ?? true,
-      };
-      await invoke("save_tripwire_config", { payload });
-      config = { ...config, ...payload };
+      const body = payload();
+      await invoke("save_tripwire_config", { payload: body });
+      config = { ...config, ...body, saved: true };
+      snapshot = JSON.stringify(body);
+      saveSuccess = "Saved. The next action is checked against these rules.";
+      setTimeout(() => { saveSuccess = ""; }, 5000);
     } catch (e) {
       saveError = String(e);
     } finally {
       saving = false;
     }
   }
+
+  // ── Try a command: the tripwire's own answer, recorded nowhere ─────────
+  interface CheckResult {
+    allowed: boolean;
+    reason?: string | null;
+    rule?: string | null;
+    matched?: string | null;
+  }
+  let tryCommand = $state("");
+  let tryResult = $state<CheckResult | null>(null);
+  let tryError = $state("");
+  let trying = $state(false);
+
+  const RULE_NAMES: Record<string, string> = {
+    allowed_paths: "Allowed paths",
+    allowed_domains: "Allowed domains",
+    banned_command_patterns: "Banned command patterns",
+    min_justification: "Minimum justification",
+    require_https: "Require HTTPS",
+  };
+
+  async function tryIt() {
+    const cmd = tryCommand.trim();
+    if (!cmd || !isTauri()) return;
+    trying = true;
+    tryError = "";
+    tryResult = null;
+    try {
+      const res = await invoke<CheckResult>("check_tripwire", {
+        intent: { action: "run_command", params: { command: cmd } },
+      });
+      tryResult = res;
+    } catch (e) {
+      tryError = String(e);
+    } finally {
+      trying = false;
+    }
+  }
 </script>
 
-<div class="flex flex-col gap-8 pb-6">
-  <div class="bg-surface p-8 rounded-2xl max-w-2xl shadow-sm">
-    <h2 class="text-sm font-semibold uppercase tracking-wider text-text-muted mb-5">Tripwire Configuration</h2>
-    <p class="text-text-muted text-sm">
-      Tripwires restrict what the agent can do: allowed paths for file access, allowed domains for HTTP,
-      and banned command patterns. Edit below and save to persist.
-    </p>
+<div class="grid grid-cols-1 xl:grid-cols-[minmax(0,720px)_minmax(300px,360px)] gap-6 min-w-0 pb-6">
+  <div class="flex flex-col gap-5 min-w-0">
+    <div>
+      <h2 class="text-xl font-semibold text-text-primary tracking-tight m-0">Tripwire</h2>
+      <p class="text-sm text-text-secondary leading-relaxed mt-1 mb-0 break-words">
+        Hard limits the agent cannot talk its way past. Every proposed action goes through Policy rules, then these tripwires, then the semantic guard when it is on; the first refusal stops the action.
+      </p>
+      <ol class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-3 m-0 p-0 list-none text-xs text-text-muted" aria-label="Order of checks">
+        <li><span class="font-semibold text-text-primary">1 Policy</span> rules per action</li>
+        <li aria-hidden="true">›</li>
+        <li><span class="font-semibold text-accent-text">2 Tripwire</span> paths, domains, patterns</li>
+        <li aria-hidden="true">›</li>
+        <li><span class="font-semibold text-text-primary">3 Guard</span> model judgement, if on</li>
+      </ol>
+    </div>
 
     {#if error}
-      <p class="text-danger text-sm">{error}</p>
+      <p class="text-danger-text text-sm break-words">{error}</p>
     {:else if config}
-      <form onsubmit={(e) => { e.preventDefault(); save(); }}>
-        <section class="my-6">
-          <h3 class="text-sm text-text-muted mb-3">Allowed paths (file access)</h3>
-          <textarea
-            class="w-full bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-5 py-4 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
-            rows="3"
-            placeholder="/path/to/workspace"
-            bind:value={allowedPathsText}
-          ></textarea>
-          <p class="text-xs text-text-muted mt-1.5">One path per line</p>
-        </section>
-
-        <section class="my-6">
-          <h3 class="text-sm text-text-muted mb-3">Allowed domains (HTTP)</h3>
-          <textarea
-            class="w-full bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-5 py-4 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
-            rows="3"
-            placeholder="example.com&#10;api.example.com"
-            bind:value={allowedDomainsText}
-          ></textarea>
-          <p class="text-xs text-text-muted mt-1.5">One domain per line</p>
-        </section>
-
-        <section class="my-6">
-          <h3 class="text-sm text-text-muted mb-3">Validation rules</h3>
-          <dl class="text-sm">
-            <dt class="text-text-muted mt-3">Min justification length (chars)</dt>
-            <dd class="mt-1">
-              <input
-                type="number"
-                min="0"
-                max="500"
-                class="w-20 bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
-                bind:value={config.min_justification_length}
-                placeholder="5"
-              />
-              <span class="text-xs text-text-muted mt-1.5">Actions (except complete) require a justification of at least this many characters</span>
-            </dd>
-            <dt class="text-text-muted mt-3">Require HTTPS for HTTP requests</dt>
-            <dd class="mt-1">
-              <select class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-4 py-2.5 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
-                value={config.require_https ? "true" : "false"}
-                onchange={(e) => { if (config) config.require_https = (e.target as HTMLSelectElement).value === "true"; }}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </dd>
-          </dl>
-        </section>
-
-        <section class="my-6">
-          <h3 class="text-sm text-text-muted mb-3">Banned command patterns</h3>
-          <div class="flex gap-3 mb-4">
-            <input
-              type="text"
-              class="flex-1 bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-5 py-3 text-sm font-mono focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200"
-              placeholder="Add pattern (e.g. rm -rf, sudo)"
-              bind:value={newPatternInput}
-              onkeydown={(e) => e.key === "Enter" && (e.preventDefault(), addBannedPattern())}
-            />
-            <button class="bg-surface-elevated border border-border-muted/40 rounded-xl text-accent px-5 py-3 text-sm cursor-pointer hover:bg-border-muted transition-all duration-200" type="button" onclick={addBannedPattern}>Add</button>
+      <form class="flex flex-col gap-5 min-w-0" onsubmit={(e) => { e.preventDefault(); save(); }}>
+        <section class="rounded-2xl bg-surface border border-border-muted/40 shadow-sm p-6 flex flex-col gap-3 min-w-0">
+          <div>
+            <h3 class="text-sm font-medium text-text-primary m-0">Allowed paths</h3>
+            <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0 break-words">File reads and writes must be under one of these. {allowedPaths.length} {allowedPaths.length === 1 ? "path" : "paths"}.</p>
           </div>
-          <div class="flex flex-wrap gap-2.5">
-            {#each bannedPatterns as pattern, i}
-              <span class="inline-flex items-center gap-2 bg-black/20 rounded-xl px-4 py-2 text-sm border border-success/20">
-                {#if editingIndex === i}
-                  <input
-                    type="text"
-                    class="bg-black/30 border border-success/40 rounded-xl text-success px-3 py-1.5 text-sm font-mono min-w-20 focus:outline-none focus:border-success/80 transition-all duration-200"
-                    bind:this={editInputRef}
-                    bind:value={editingValue}
-                    onblur={commitEdit}
-                    onkeydown={(e) => {
-                      if (e.key === "Enter") commitEdit();
-                      if (e.key === "Escape") cancelEdit();
-                    }}
-                    onclick={(e) => e.stopPropagation()}
-                  />
-                {:else}
-                  <span
-                    class="cursor-pointer select-none"
-                    role="button"
-                    tabindex="0"
-                    onclick={() => startEdit(i)}
-                    onkeydown={(e) => e.key === "Enter" && startEdit(i)}
-                  >
-                    <code class="text-success hover:underline">{pattern}</code>
-                  </span>
-                {/if}
-                <button
-                  class="inline-flex items-center justify-center bg-transparent border-none rounded-sm text-danger p-0.5 cursor-pointer transition-colors hover:text-danger hover:bg-danger/20"
-                  type="button"
-                  title="Remove"
-                  onclick={(e) => { e.stopPropagation(); removeBannedPattern(pattern); }}
-                  aria-label="Remove {pattern}"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                    <line x1="10" y1="11" x2="10" y2="17"></line>
-                    <line x1="14" y1="11" x2="14" y2="17"></line>
-                  </svg>
-                </button>
-              </span>
-            {/each}
+          <ListEditor id="tripwire-paths" bind:items={allowedPaths} addLabel="Add an allowed path" placeholder="/path/to/workspace" validate={validatePath} />
+          {#if config.saved === false}
+            <p class="text-xs text-text-secondary leading-relaxed m-0 break-words">
+              Not saved yet. Until you save, each Claude Code session is confined to the project folder it runs in, and the path above (where this app started) applies only to audits run from here. Saving applies these paths to both.
+            </p>
+          {/if}
+        </section>
+
+        <section class="rounded-2xl bg-surface border border-border-muted/40 shadow-sm p-6 flex flex-col gap-3 min-w-0">
+          <div>
+            <h3 class="text-sm font-medium text-text-primary m-0">Allowed domains (HTTP)</h3>
+            <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0 break-words">The only place this list lives; every check reads it from here. {allowedDomains.length} {allowedDomains.length === 1 ? "domain" : "domains"}.</p>
           </div>
-          <p class="text-xs text-text-muted mt-1.5">Commands matching any pattern are blocked</p>
+          <ListEditor id="tripwire-domains" bind:items={allowedDomains} addLabel="Add an allowed domain" placeholder="api.example.com" validate={validateDomain} />
+          <div class="flex items-start justify-between gap-4 border-t border-border-muted/40 pt-3 min-w-0">
+            <div class="min-w-0">
+              <p id="tripwire-require-https-label" class="text-sm font-medium text-text-primary m-0">Require HTTPS</p>
+              <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0">Plain HTTP requests are refused.</p>
+            </div>
+            <Switch id="tripwire-require-https" bind:checked={requireHttps} labelledby="tripwire-require-https-label" />
+          </div>
+        </section>
+
+        <section class="rounded-2xl bg-surface border border-border-muted/40 shadow-sm p-6 flex flex-col gap-3 min-w-0">
+          <div>
+            <h3 class="text-sm font-medium text-text-primary m-0">Banned command patterns</h3>
+            <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0 break-words">Regular expressions; a command matching any of them is refused. {bannedPatterns.length} {bannedPatterns.length === 1 ? "pattern" : "patterns"}.</p>
+          </div>
+          <ListEditor id="tripwire-patterns" bind:items={bannedPatterns} addLabel="Add a banned pattern" placeholder="a regular expression" validate={validatePattern} tone="deny" />
+        </section>
+
+        <section class="rounded-2xl bg-surface border border-border-muted/40 shadow-sm p-6 flex items-start justify-between gap-4 min-w-0 flex-wrap">
+          <div class="min-w-0 flex-1">
+            <label for="tripwire-min-justification" class="block text-sm font-medium text-text-primary">Minimum justification</label>
+            <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0 break-words">Actions other than complete must explain themselves in at least this many characters.</p>
+          </div>
+          <input
+            id="tripwire-min-justification"
+            type="number"
+            min="0"
+            max="500"
+            class="w-24 shrink-0 bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
+            bind:value={minJustification}
+          />
         </section>
 
         {#if saveError}
-          <p class="text-danger text-sm">{saveError}</p>
+          <p class="text-danger-text text-sm m-0 break-words" role="alert">{saveError}</p>
+        {:else if saveSuccess}
+          <p class="text-success text-sm m-0 break-words" role="status">{saveSuccess}</p>
         {/if}
-
-        <div class="flex gap-4 mt-8">
-          <button class="bg-transparent border border-border-muted/30 rounded-xl text-accent px-5 py-3 text-sm cursor-pointer hover:bg-surface-elevated transition-all duration-200" type="button" onclick={load}>↻ Refresh</button>
-          <button class="bg-accent border-none rounded-xl text-white px-6 py-3 text-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] shadow-sm shadow-accent/20 hover:shadow-md hover:bg-accent-hover" type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+        <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
       </form>
     {:else}
       <p class="text-text-secondary text-sm">Loading…</p>
     {/if}
+
+    <SaveBar
+      {dirty}
+      {saving}
+      message="Changes apply to the next action once saved. Every session records the hash of the rules it ran under, so an edit here cannot change what an old certificate says."
+      onsave={save}
+      ondiscard={load}
+    />
   </div>
+
+  <aside class="flex flex-col gap-4 min-w-0">
+    <section class="rounded-2xl bg-surface border border-border-muted/40 shadow-sm p-6 flex flex-col gap-3 min-w-0 xl:sticky xl:top-0">
+      <div>
+        <h3 class="text-sm font-medium text-text-primary m-0">Try a command</h3>
+        <p class="text-xs text-text-muted leading-relaxed mt-1 mb-0 break-words">The tripwire's own answer for a shell command, against the saved rules. Nothing is recorded. Policy rules and the guard are not consulted here.</p>
+      </div>
+      <label for="tripwire-try" class="sr-only">Command to try</label>
+      <textarea
+        id="tripwire-try"
+        rows="3"
+        class="w-full bg-surface-elevated/40 border border-border-muted/40 rounded-xl text-text-primary px-4 py-3 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200"
+        placeholder="a shell command"
+        bind:value={tryCommand}
+        onkeydown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tryIt(); } }}
+      ></textarea>
+      <div class="flex items-center gap-3">
+        <Button variant="primary" size="sm" onclick={tryIt} disabled={trying || !tryCommand.trim()} loading={trying}>{trying ? "Checking…" : "Check"}</Button>
+        {#if dirty}<span class="text-xs text-warning">Unsaved edits are not checked.</span>{/if}
+      </div>
+      {#if tryError}
+        <p class="text-xs text-danger-text m-0 break-words" role="alert">{tryError}</p>
+      {:else if tryResult}
+        <div class="rounded-xl border px-4 py-3 flex flex-col gap-1.5 {tryResult.allowed ? 'border-success/30 bg-success-muted/30' : 'border-danger/30 bg-danger-muted/30'}" role="status">
+          <span class="text-sm font-semibold {tryResult.allowed ? 'text-success' : 'text-danger-text'}">{tryResult.allowed ? "Tripwire allows it" : "Tripwire refuses it"}</span>
+          {#if !tryResult.allowed}
+            <span class="text-xs text-text-primary break-words">
+              {#if tryResult.rule}<span class="font-medium">{RULE_NAMES[tryResult.rule] ?? tryResult.rule}</span>{/if}
+              {#if tryResult.matched}: <code class="font-mono">{tryResult.matched}</code>{/if}
+            </span>
+            {#if tryResult.reason}<span class="text-xs text-text-secondary break-words">{tryResult.reason}</span>{/if}
+          {:else}
+            <span class="text-xs text-text-secondary">Policy rules and the guard still get their say when it runs for real.</span>
+          {/if}
+        </div>
+      {/if}
+    </section>
+  </aside>
 </div>

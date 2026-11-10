@@ -11,10 +11,6 @@ pub struct Metrics {
     pub token_count: AtomicU64,
     /// Number of output scanner detections (injection / exfiltration patterns found).
     pub scanner_detections: AtomicU64,
-    /// Number of guard process detections (guard said DENY).
-    pub guard_detections: AtomicU64,
-    /// Number of tripwire rule violations (distinct from guard denials).
-    pub tripwire_detections: AtomicU64,
 }
 
 impl Metrics {
@@ -40,13 +36,7 @@ impl Metrics {
              ectoledger_token_count_total {}\n\
              # HELP ectoledger_scanner_detections_total Output scanner detections.\n\
              # TYPE ectoledger_scanner_detections_total counter\n\
-             ectoledger_scanner_detections_total {}\n\
-             # HELP ectoledger_guard_detections_total Guard DENY decisions.\n\
-             # TYPE ectoledger_guard_detections_total counter\n\
-             ectoledger_guard_detections_total {}\n\
-             # HELP ectoledger_tripwire_detections_total Tripwire rule violations.\n\
-             # TYPE ectoledger_tripwire_detections_total counter\n\
-             ectoledger_tripwire_detections_total {}\n",
+             ectoledger_scanner_detections_total {}\n",
             self.events_appended.load(Ordering::Relaxed),
             self.tripwire_rejections.load(Ordering::Relaxed),
             self.guard_denials.load(Ordering::Relaxed),
@@ -54,8 +44,6 @@ impl Metrics {
             self.snapshots_created.load(Ordering::Relaxed),
             self.token_count.load(Ordering::Relaxed),
             self.scanner_detections.load(Ordering::Relaxed),
-            self.guard_detections.load(Ordering::Relaxed),
-            self.tripwire_detections.load(Ordering::Relaxed),
         )
     }
 
@@ -81,12 +69,6 @@ impl Metrics {
     }
     pub fn inc_scanner_detections(&self) {
         self.scanner_detections.fetch_add(1, Ordering::Relaxed);
-    }
-    pub fn inc_guard_detections(&self) {
-        self.guard_detections.fetch_add(1, Ordering::Relaxed);
-    }
-    pub fn inc_tripwire_detections(&self) {
-        self.tripwire_detections.fetch_add(1, Ordering::Relaxed);
     }
     /// Current approximate token count.
     pub fn current_token_count(&self) -> u64 {

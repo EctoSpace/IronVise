@@ -1,4 +1,4 @@
-// EctoLedger — SP1 zkVM Guest Program
+// IronVise - SP1 zkVM Guest Program
 //
 // This program runs inside the Succinct SP1 RISC-V virtual machine and produces a
 // zero-knowledge proof that:
@@ -17,19 +17,16 @@
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
-use ectoledger_core::hash::{compute_content_hash, GENESIS_PREVIOUS_HASH};
+use ectoledger_core::hash::verify_content_hash_any_scheme;
 use ectoledger_core::merkle;
 use ectoledger_core::schema::{GuestInput, GuestOutput};
 use regex_lite::Regex;
 
 pub fn main() {
-    // ── 1. Deserialize input (bincode, no JSON) ───────────────────────────────
     let input: GuestInput = sp1_zkvm::io::read::<GuestInput>();
 
     assert!(!input.events.is_empty(), "guest: event list is empty");
 
-    // ── 2. PERFORMANCE MANDATE 2: Compile all policy patterns exactly once ────
-    //
     // Patterns are compiled here, before the event loop, so regex compilation cost
     // is O(P) rather than O(P × N) where P = number of patterns and N = event count.
     let compiled_patterns: Vec<(Regex, usize)> = input
@@ -43,53 +40,53 @@ pub fn main() {
         })
         .collect();
 
-    // ── 3. Hash-chain verification ────────────────────────────────────────────
-    //
-    // For every event we re-derive:
-    //   content_hash = sha256( previous_hash || sequence || payload_json )
-    //
-    // Then we assert that the NEXT event's `previous_hash` equals what we just computed.
-    // This proves the chain has no gaps, insertions, or tampered payloads.
+    // For every event we re-derive its content hash with the canonical v2
+    // scheme - binding previous_hash, sequence, payload_json, session_id, and
+    // created_at - falling back through the pre-migration v1 layouts (the same
+    // multi-scheme verifier the host backends use). The expected value for
+    // event i is event i+1's `previous_hash` (or `tip_hash` for the last
+    // event), so a match proves the chain has no gaps, insertions, or
+    // tampered payloads.
 
-    // Verify genesis starts from the canonical all-zeros previous hash.
+    // Verify the first event links to the expected anchor. For a chain slice
+    // starting at the global genesis this is the all-zeros hash; for a
+    // session-scoped slice it is the content hash of the preceding event.
     assert_eq!(
         input.events[0].previous_hash,
-        GENESIS_PREVIOUS_HASH,
-        "guest: genesis event must start from the all-zeros previous hash"
+        input.anchor_previous_hash,
+        "guest: first event must link back to the expected anchor previous_hash"
     );
 
     let mut violations: Vec<String> = Vec::new();
     let mut computed_content_hashes: Vec<String> = Vec::with_capacity(input.events.len());
 
     for (i, event) in input.events.iter().enumerate() {
-        // Re-derive the content hash from the three chain inputs.
-        // The guest operates over a pre-validated chain snapshot; session_id
-        // binding is enforced at append-time, so we pass None here.
-        let content_hash = compute_content_hash(
+        // The expected content hash for this event: the next event's
+        // previous_hash, or the tip hash for the final event.
+        let expected_hash = if i + 1 < input.events.len() {
+            &input.events[i + 1].previous_hash
+        } else {
+            &input.tip_hash
+        };
+
+        let scheme = verify_content_hash_any_scheme(
             &event.previous_hash,
             event.sequence,
             &event.payload_json,
-            None,
-            None,
+            event.session_id.as_deref(),
+            Some(&event.created_at),
+            expected_hash,
         );
-        computed_content_hashes.push(content_hash.clone());
+        assert!(
+            scheme.is_some(),
+            "guest: hash chain break at sequence {} (no scheme reproduces the expected hash)",
+            event.sequence,
+        );
+        computed_content_hashes.push(expected_hash.clone());
 
-        // Verify the next event's `previous_hash` links back to this computed hash.
-        if i + 1 < input.events.len() {
-            assert_eq!(
-                input.events[i + 1].previous_hash,
-                content_hash,
-                "guest: hash chain break between sequence {} and {}",
-                event.sequence,
-                input.events[i + 1].sequence,
-            );
-        }
-
-        // ── 4-inline. Policy pattern evaluation (compile-once, run-per-event) ─
-        //
         // Each event's raw payload_json is checked against every compiled pattern.
         // Matches are recorded as violations and included in GuestOutput.
-        // Policy violations do NOT abort the proof — the host decides how to handle them.
+        // Policy violations do NOT abort the proof - the host decides how to handle them.
         for (re, pattern_idx) in &compiled_patterns {
             if re.is_match(&event.payload_json) {
                 violations.push(format!(
@@ -102,7 +99,6 @@ pub fn main() {
         }
     }
 
-    // ── 4. Tip hash verification ──────────────────────────────────────────────
     let actual_tip = computed_content_hashes.last().expect("guest: no computed hashes");
     assert_eq!(
         actual_tip,
@@ -110,7 +106,6 @@ pub fn main() {
         "guest: computed tip hash does not match expected tip_hash"
     );
 
-    // ── 5. Genesis hash verification ──────────────────────────────────────────
     let actual_genesis = computed_content_hashes.first().expect("guest: no computed hashes");
     assert_eq!(
         actual_genesis,
@@ -118,8 +113,6 @@ pub fn main() {
         "guest: computed genesis hash does not match expected genesis_hash"
     );
 
-    // ── 6. Merkle root verification ───────────────────────────────────────────
-    //
     // Build the Merkle tree from the COMPUTED content hashes (not from any DB values).
     // This proves the tree is derived from the same chain we just verified.
     let hash_refs: Vec<&str> = computed_content_hashes.iter().map(|s| s.as_str()).collect();
@@ -134,8 +127,6 @@ pub fn main() {
         "guest: computed Merkle root does not match expected merkle_root"
     );
 
-    // ── 7. Commit output to the proof's public values ─────────────────────────
-    //
     // The verifier on the host can read GuestOutput back from the proof's public values.
     // `verified = true` is only committed when ALL hash and Merkle checks passed above
     // (any failure would have caused a panic, aborting proof generation).

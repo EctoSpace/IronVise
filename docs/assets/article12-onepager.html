@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EU AI Act Article 12 - IronVise mapping</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm 10mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 8.4pt/1.35 -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #16191d;
+  }
+  h1 { font-size: 15pt; margin: 0 0 1mm; letter-spacing: -0.2pt; }
+  .sub { font-size: 8.2pt; color: #4a5058; margin: 0 0 1.5mm; }
+  .date-banner {
+    border-left: 2.5pt solid #b45309; background: #fdf6ec;
+    padding: 1.6mm 2.4mm; margin: 0 0 3mm; font-size: 8pt;
+  }
+  h2 {
+    font-size: 9.2pt; margin: 3.4mm 0 1.4mm; padding-bottom: 0.7mm;
+    border-bottom: 0.5pt solid #c8ccd2; letter-spacing: 0.1pt;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+  th {
+    text-align: left; background: #eef0f3; padding: 1.2mm 1.6mm;
+    border: 0.4pt solid #c8ccd2; font-size: 7.3pt; text-transform: uppercase;
+    letter-spacing: 0.25pt; color: #3a4048;
+  }
+  td { padding: 1.1mm 1.6mm; border: 0.4pt solid #d6dade; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  code { font: 7pt/1.25 "SFMono-Regular", Menlo, Consolas, monospace; color: #0f2f5c; }
+  .art { white-space: nowrap; font-weight: 700; }
+  .full { color: #15672f; font-weight: 700; }
+  .part { color: #a35c00; font-weight: 700; }
+  .none { color: #9a1f1f; font-weight: 700; }
+  .cols { display: flex; gap: 4mm; }
+  .cols > div { flex: 1; }
+  ul { margin: 0.8mm 0 0; padding-left: 3.6mm; }
+  li { margin-bottom: 0.7mm; }
+  .gap { border: 0.4pt solid #d6dade; background: #fafbfc; padding: 1.8mm 2.2mm; }
+  footer {
+    margin-top: 3.4mm; padding-top: 1.4mm; border-top: 0.5pt solid #c8ccd2;
+    font-size: 6.9pt; color: #5a6068; display: flex; justify-content: space-between;
+  }
+  strong.lbl { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>EU AI Act Article 12 - record-keeping</h1>
+<p class="sub">How the IronVise event schema maps to the logging requirement. Technical mapping, not legal advice.</p>
+
+<div class="date-banner">
+  <strong>Applies from 2 December 2027</strong> (Annex III stand-alone high-risk systems), not 2 August 2026.
+  Regulation (EU) 2026/1744 - the Digital Omnibus on AI - entered into force 27 July 2026 and deferred the
+  Chapter III Section 2 obligations. Annex I embedded systems: 2 August 2028.
+</div>
+
+<h2>Requirement → ledger mechanism</h2>
+<table>
+  <thead>
+    <tr><th style="width:20%">Requirement</th><th style="width:34%">Mechanism</th><th style="width:32%">Fields</th><th style="width:14%">Coverage</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="art">12(1)</span> automatic recording over the lifetime</td>
+      <td>Append-only <code>agent_events</code>; one row per agent step, written by the loop, not the model. No <code>UPDATE</code>/<code>DELETE</code> - enforced by a <code>prevent_updates()</code> trigger.</td>
+      <td><code>sequence</code>, <code>created_at</code>, <code>payload</code>, <code>session_id</code></td>
+      <td><span class="part">Partial</span> - only what runs through IronVise</td>
+    </tr>
+    <tr>
+      <td><span class="art">12(2)(a)</span> risk situations</td>
+      <td>Guard denials and tripwire rejections are appended <em>before</em> execution - but as free text, not a typed event.</td>
+      <td><code>payload</code> kind <code>thought</code>, prefixed <code>"Guard denied: "</code></td>
+      <td><span class="part">Partial</span> - unstructured</td>
+    </tr>
+    <tr>
+      <td><span class="art">12(2)(a)</span> substantial modification</td>
+      <td>Governing policy hashed and pinned per session; key changes have dedicated kinds.</td>
+      <td><code>agent_sessions.policy_hash</code>; <code>key_rotation</code>, <code>key_revocation</code></td>
+      <td><span class="full">Full</span></td>
+    </tr>
+    <tr>
+      <td><span class="art">12(2)(b)</span> post-market monitoring (Art. 72)</td>
+      <td>Per-run session records and execution outcomes; optional SIEM egress (JSON/CEF/LEEF).</td>
+      <td><code>agent_sessions.goal_hash</code>, <code>.status</code>, <code>.llm_model</code>, <code>.finished_at</code>; <code>agent_action_log.error_msg</code></td>
+      <td><span class="full">Full</span> for mediated runs</td>
+    </tr>
+    <tr>
+      <td><span class="art">12(2)(c)</span> monitoring operation (Art. 26(5))</td>
+      <td>Action lifecycle plus human-in-the-loop approval decisions.</td>
+      <td><code>agent_action_log.*</code>; <code>pending_approvals.gate_id</code>, <code>.approved</code>, <code>.reason</code></td>
+      <td><span class="full">Full</span> for mediated runs</td>
+    </tr>
+    <tr>
+      <td><span class="art">12(3)(a)</span> period of each use</td>
+      <td>Session start and end timestamps.</td>
+      <td><code>agent_sessions.created_at</code>, <code>.finished_at</code></td>
+      <td><span class="full">Full</span></td>
+    </tr>
+    <tr>
+      <td><span class="art">12(3)(b-c)</span> reference database, matched input</td>
+      <td>Annex III point 1(a) is remote biometric identification. IronVise performs no biometric matching.</td>
+      <td>-</td>
+      <td><span class="none">None</span> - out of scope</td>
+    </tr>
+    <tr>
+      <td><span class="art">12(3)(d)</span> persons verifying results</td>
+      <td>Approval decisions are recorded by gate, not by verified natural-person identity.</td>
+      <td><code>pending_approvals.gate_id</code>, <code>approval_decision</code></td>
+      <td><span class="part">Partial</span></td>
+    </tr>
+    <tr>
+      <td><span class="art">19(1)</span> retention ≥ 6 months</td>
+      <td>Events persist in PostgreSQL or SQLite; nothing is auto-deleted, and nothing is auto-enforced.</td>
+      <td><code>agent_events.created_at</code></td>
+      <td><span class="part">Deployment</span> responsibility</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="cols">
+  <div>
+    <h2>The part the Act does not specify</h2>
+    <div class="gap">
+      Article 12 requires logs be <em>recorded</em>; Article 19 requires they be <em>kept</em>.
+      <strong>Neither requires they be tamper-evident.</strong> A plain application log satisfies a
+      literal reading while remaining editable by the provider who is the subject of the audit.
+      <ul>
+        <li><strong class="lbl">Hash chaining</strong> - canonical v2 input binds <code>session_id</code> and <code>created_at</code> into the digest; editing any event breaks every later link.</li>
+        <li><strong class="lbl">Ed25519 signatures</strong> - per-session key pinned in <code>session_public_key</code>, optionally a <code>did:key:</code>.</li>
+        <li><strong class="lbl">External anchoring</strong> - OpenTimestamps bounds <em>when</em> the log existed, outside the provider's control.</li>
+        <li><strong class="lbl">Offline verification</strong> - <code>verify-cert</code> checks an exported <code>.elc</code> with no database and no network.</li>
+      </ul>
+    </div>
+  </div>
+  <div>
+    <h2>Limits - read before citing</h2>
+    <ul>
+      <li><strong class="lbl">Proves:</strong> the log has not been altered since it was written, and existed no later than the anchor.</li>
+      <li><strong class="lbl">Does not prove:</strong> that the log is <em>complete</em>, or that what was written was <em>true</em>. A hash chain constrains what happens after an event is appended - not an event never appended.</li>
+      <li>IronVise only logs what runs through IronVise.</li>
+      <li>A certificate is supporting evidence, not compliance. Article 12 is one requirement among many in Chapter III.</li>
+      <li>Organisations get certified; software does not.</li>
+      <li>Not legal advice, and not reviewed by counsel.</li>
+    </ul>
+    <h2>Standards in flight</h2>
+    <ul>
+      <li><strong class="lbl">prEN 18229-1</strong> (CEN-CENELEC JTC 21 WG4) - logging, transparency, human oversight. Public enquiry to 20 Aug 2026.</li>
+      <li><strong class="lbl">ISO/IEC 24970</strong> (JTC 1/SC 42) - AI system logging. At FDIS.</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  <span>Full mapping, with verbatim article text: <code>docs/compliance/eu-ai-act-article12.md</code></span>
+  <span>Verified against primary sources 2026-08-10</span>
+</footer>
+
+</body>
+</html>

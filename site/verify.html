@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- No requests after load: no fetch, no XHR, no beacons, no fonts, no CDN.
+       'wasm-unsafe-eval' is what lets the verifier module compile. -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'"
+  />
+  <title>Verify a Certificate | IronVise</title>
+  <meta
+    name="description"
+    content="Check an IronVise audit certificate in your browser. The same verifier as the verify-cert command, compiled to WebAssembly. Nothing is uploaded."
+  />
+  <link rel="icon" href="images/ectoSpace-Logo.webp" type="image/webp" />
+  <style>
+    :root {
+      --bg: #05060a;
+      --panel: #0b0d14;
+      --panel-2: #121521;
+      --line: rgba(255, 255, 255, 0.1);
+      --text: #e8eaf2;
+      --muted: #a3a8b8;
+      --brand: #9d79ff;
+      --aqua: #73e3ff;
+      --ok: #34e5bd;
+      --warn: #f5b64a;
+      --bad: #ff7b7b;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    a { color: var(--aqua); }
+    a:hover { color: #fff; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+    header.top { border-bottom: 1px solid var(--line); }
+    header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; padding-bottom: 14px; }
+    .brand { color: var(--text); text-decoration: none; font-weight: 700; letter-spacing: -0.01em; }
+    header.top nav { display: flex; gap: 18px; font-size: 14px; flex-wrap: wrap; }
+    header.top nav a { color: var(--muted); text-decoration: none; }
+    header.top nav a:hover, header.top nav a[aria-current] { color: #fff; }
+    h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 48px 0 12px; letter-spacing: -0.02em; }
+    h2 { font-size: 22px; margin: 56px 0 12px; letter-spacing: -0.01em; }
+    .lead { color: var(--muted); font-size: 18px; margin: 0 0 8px; max-width: 64ch; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; margin-top: 24px; }
+    .drop {
+      display: block; border: 2px dashed rgba(157, 121, 255, 0.45); border-radius: 12px;
+      padding: 28px 16px; text-align: center; cursor: pointer; background: var(--panel-2);
+    }
+    .drop:hover, .drop-active { border-color: var(--brand); background: rgba(157, 121, 255, 0.08); }
+    .drop:focus-within { outline: 2px solid var(--aqua); outline-offset: 2px; }
+    .drop strong { display: block; font-size: 17px; }
+    .drop span { color: var(--muted); font-size: 14px; }
+    .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .row-label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin: 20px 0 8px; }
+    .samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+    .sample {
+      text-align: left; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 10px; padding: 12px; cursor: pointer; font: inherit;
+    }
+    .sample:hover { border-color: var(--brand); }
+    .sample:focus-visible, .btn:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+    .sample-label { display: block; font-weight: 600; font-size: 15px; }
+    .sample-blurb { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .opts { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; font-size: 15px; }
+    .opts label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+    .opts input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
+    .key { flex: 1 1 320px; display: flex; flex-direction: column; gap: 4px; }
+    .key input {
+      width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 9px 10px; font: 13px var(--mono);
+    }
+    .status { color: var(--muted); font-size: 14px; min-height: 1.6em; margin: 12px 0 0; }
+    .current { color: var(--muted); font-size: 14px; margin: 12px 0 0; overflow-wrap: anywhere; }
+    .current span { font-family: var(--mono); color: var(--text); }
+    .mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+    .verdict { border-radius: 12px; padding: 16px 18px; border: 1px solid; margin-top: 20px; }
+    .verdict p { margin: 0; }
+    .verdict-title { font-size: 22px; font-weight: 700; }
+    .verdict-meaning { margin-top: 4px !important; }
+    .verdict-line { margin-top: 10px !important; color: var(--muted); }
+    .verdict-valid { border-color: rgba(52, 229, 189, 0.5); background: rgba(52, 229, 189, 0.08); }
+    .verdict-valid .verdict-title { color: var(--ok); }
+    .verdict-unsigned { border-color: rgba(245, 182, 74, 0.5); background: rgba(245, 182, 74, 0.08); }
+    .verdict-unsigned .verdict-title { color: var(--warn); }
+    .verdict-invalid { border-color: rgba(255, 123, 123, 0.5); background: rgba(255, 123, 123, 0.08); }
+    .verdict-invalid .verdict-title { color: var(--bad); }
+    .meta { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 18px 0; font-size: 14px; }
+    .meta dt { color: var(--muted); }
+    .meta dd { margin: 0; overflow-wrap: anywhere; }
+    .checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+    .check { display: flex; gap: 12px; align-items: flex-start; background: var(--panel-2); border-radius: 10px; padding: 10px 12px; border-left: 3px solid var(--line); }
+    .check-sym { font-weight: 700; width: 1.2em; text-align: center; flex: none; }
+    .check-pass { border-left-color: var(--ok); } .check-pass .check-sym { color: var(--ok); }
+    .check-warn { border-left-color: var(--warn); } .check-warn .check-sym { color: var(--warn); }
+    .check-fail { border-left-color: var(--bad); } .check-fail .check-sym { color: var(--bad); }
+    .check-body { min-width: 0; }
+    .check-line { margin: 0; overflow-wrap: anywhere; font-size: 15px; }
+    .check-note { margin: 4px 0 0; color: var(--muted); }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+    .fact h3 { margin: 0 0 6px; font-size: 16px; }
+    .fact p { margin: 0; color: var(--muted); font-size: 15px; }
+    pre.cmd {
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+      font: 13px/1.6 var(--mono); overflow-x: auto; white-space: pre; margin: 10px 0;
+    }
+    textarea {
+      width: 100%; min-height: 150px; background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: 13px/1.6 var(--mono);
+    }
+    .btn {
+      background: var(--brand); color: #0b0d14; border: 0; border-radius: 10px; padding: 10px 16px;
+      font: 600 15px system-ui, sans-serif; cursor: pointer; margin-top: 10px;
+    }
+    .btn:hover { background: #b89bff; }
+    .challenge-result { margin-top: 10px; font-size: 15px; }
+    .challenge-result.ok { color: var(--ok); }
+    .challenge-result.no { color: var(--warn); }
+    dl.prov { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 14px; }
+    dl.prov dt { color: var(--muted); }
+    dl.prov dd { margin: 0; }
+    footer { border-top: 1px solid var(--line); margin-top: 64px; padding: 24px 0 40px; color: var(--muted); font-size: 14px; }
+    @media (max-width: 560px) {
+      .meta, dl.prov { grid-template-columns: 1fr; }
+      .meta dt, dl.prov dt { margin-top: 6px; }
+    }
+  </style>
+  <script src="verify-bundle.js"></script>
+  <script src="verify.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="index.html">IronVise</a>
+      <nav aria-label="Site">
+        <a href="features.html">Features</a>
+        <a href="demo.html">Demo</a>
+        <a href="verify.html" aria-current="page">Verify</a>
+        <a href="changelog.html">Changelog</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1>Check an AI agent's audit certificate</h1>
+    <p class="lead">
+      Drop an <span class="mono">.elc</span> file below. It is checked here, in your browser, by the
+      same code as the <span class="mono">verify-cert</span> command. Nothing is uploaded.
+    </p>
+
+    <section class="card" aria-labelledby="tool-h">
+      <h2 id="tool-h" style="margin-top:0">Verify</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".elc,application/json" />
+        <strong>Choose a certificate, or drop it here</strong>
+        <span>Any .elc file. It never leaves this page.</span>
+      </label>
+
+      <p class="row-label" id="samples-h">Or try a sample</p>
+      <div class="samples" id="samples" role="group" aria-labelledby="samples-h"></div>
+
+      <p class="row-label">Requirements</p>
+      <div class="opts">
+        <label><input type="checkbox" id="opt-strict" /> Require a signature</label>
+        <label><input type="checkbox" id="opt-anchor" /> Require a Bitcoin anchor</label>
+        <div class="key">
+          <label for="opt-ots">Upgraded timestamp (.ots, optional)</label>
+          <span style="display:flex;gap:8px;align-items:center">
+            <input id="opt-ots" type="file" accept=".ots,application/octet-stream" />
+            <button type="button" id="opt-ots-clear" class="sample" hidden style="padding:4px 10px">Clear</button>
+          </span>
+        </div>
+        <div class="key">
+          <label for="opt-key">Expected signing key (hex, optional)</label>
+          <input id="opt-key" type="text" spellcheck="false" autocomplete="off" placeholder="From the issuer, not from the file" />
+        </div>
+      </div>
+
+      <p class="current" aria-live="polite">Checking: <span id="current-file">nothing yet</span></p>
+      <p class="status" id="status" role="status"></p>
+      <div id="result" aria-live="polite" hidden></div>
+    </section>
+
+    <h2>What a pass means, and what it does not</h2>
+    <div class="facts">
+      <div class="fact">
+        <h3>Valid</h3>
+        <p>Nothing the signature covers has changed since signing: the event hashes, their order, the findings and the goal.</p>
+      </div>
+      <div class="fact">
+        <h3>Who signed it</h3>
+        <p>A key read from the file only proves the file signed itself. Paste a key you got from the issuer to check who.</p>
+      </div>
+      <div class="fact">
+        <h3>Unsigned</h3>
+        <p>Consistent but unsigned means anyone could have built it. Tick "Require a signature" to treat that as a fail.</p>
+      </div>
+      <div class="fact">
+        <h3>What it cannot see</h3>
+        <p>An event that was never recorded. The certificate proves what is in the ledger, not that everything the agent did went into it.</p>
+      </div>
+    </div>
+
+    <h2 id="challenge">Break the ledger</h2>
+    <p>
+      Five ledgers and one certificate. Three ledgers were tampered with by someone who could write to the database but
+      did not have the signing key. The certificate is a fourth tamper. Find the clean ones and name the rest.
+    </p>
+    <p>
+      The certificate is the "Forged" sample above. The ledgers are SQLite files: get them from
+      <a href="https://github.com/EctoSpace/EctoLedger/tree/main/examples/challenge">examples/challenge</a>
+      and check them with:
+    </p>
+    <pre class="cmd">for f in ledger-*.sqlite; do
+  DATABASE_URL="sqlite:$f" OBSERVER_TOKEN=x ironvise verify-ledger
+done</pre>
+    <p>Check your answer here. One line per file, in this order:</p>
+    <pre class="cmd">ledger-1.sqlite:&lt;kind&gt;
+ledger-2.sqlite:&lt;kind&gt;
+ledger-3.sqlite:&lt;kind&gt;
+ledger-4.sqlite:&lt;kind&gt;
+ledger-5.sqlite:&lt;kind&gt;
+ledger-5-certificate.elc:merkle-root-mismatch</pre>
+    <p class="mono" style="color:var(--muted)">
+      kinds: verified, payload-hash-mismatch, altered-after-signing, truncated-since-sealing, bad-signature, unauthorised-key
+    </p>
+    <label for="challenge-answer" class="row-label" style="display:block">Your answer</label>
+    <textarea id="challenge-answer" spellcheck="false"></textarea>
+    <button class="btn" type="button" id="challenge-check">Check answer</button>
+    <p class="challenge-result" id="challenge-result" role="status"></p>
+    <p style="color:var(--muted);font-size:14px">
+      This only compares a SHA-256 hash. It is a self-check, not a secret: the answer can be brute-forced, and the
+      generator script states it. Found a tamper the tools miss? That is the real prize.
+      <a href="https://github.com/EctoSpace/EctoLedger/issues/new">Open an issue</a>.
+    </p>
+
+    <h2>Check this page</h2>
+    <p>Do not take the page's word for it either.</p>
+    <dl class="prov">
+      <dt>Built from</dt><dd class="mono" id="prov-crate"></dd>
+      <dt>Compiler</dt><dd class="mono" id="prov-rustc"></dd>
+      <dt>Module SHA-256</dt><dd class="mono" id="prov-sha"></dd>
+      <dt>Module size</dt><dd id="prov-size"></dd>
+    </dl>
+    <p>
+      The page's Content-Security-Policy forbids network requests after it loads. Save it, go offline, and it still works.
+      To get the same verdict without a browser:
+    </p>
+    <pre class="cmd">verify-cert --expected-key &lt;issuer key&gt; audit.elc</pre>
+    <p>
+      To rebuild the module: <span class="mono">make wasm-verifier</span>. The format is specified in
+      <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/reference/elc-spec.md">docs/reference/elc-spec.md</a>, and a second
+      verifier written from that spec alone, in Python, is in
+      <a href="https://github.com/EctoSpace/EctoLedger/tree/main/examples/verified-session">examples/verified-session</a>.
+    </p>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      IronVise: proof of what your AI agent did, and of what it was stopped from doing.
+      Prototype, not independently audited.
+    </div>
+  </footer>
+</body>
+</html>

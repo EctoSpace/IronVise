@@ -7,7 +7,10 @@ use ectoledger::snapshot;
 use ectoledger::wakeup;
 
 #[tokio::test]
-#[cfg_attr(not(feature = "integration"), ignore)] // run with: cargo test --features integration
+#[cfg_attr(
+    not(feature = "integration"),
+    ignore = "needs PostgreSQL; run with --features integration"
+)]
 async fn append_100_snapshot_then_restore() {
     let (pool, _db) = spawn_test_pool().await;
     reset_ledger(&pool).await;
@@ -16,7 +19,7 @@ async fn append_100_snapshot_then_restore() {
         ledger::append_event(
             &pool,
             EventPayload::Thought {
-                content: format!("step {}", i),
+                content: format!("step {i}"),
             },
             None,
             None,
@@ -36,7 +39,8 @@ async fn append_100_snapshot_then_restore() {
         .expect("snapshot_at_sequence");
     assert_eq!(row.sequence, latest_seq);
 
-    let state = wakeup::restore_state(&pool, true)
+    let db = ectoledger::pool::DatabasePool::Postgres(pool.clone());
+    let state = wakeup::restore_state(&db, true)
         .await
         .expect("restore_state");
     assert_eq!(state.snapshot_sequence, latest_seq);

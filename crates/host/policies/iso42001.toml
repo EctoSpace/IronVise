@@ -1,7 +1,7 @@
 # ISO/IEC 42001:2023 Compliance Policy Pack
-# EctoLedger 2026
+# IronVise 2026
 #
-# This file maps each relevant ISO 42001 control to concrete EctoLedger features
+# This file maps each relevant ISO 42001 control to concrete IronVise features
 # and is loaded by the policy engine alongside the other compliance packs.
 #
 # Structure mirrors the existing SOC2 / PCI-DSS packs.
@@ -10,11 +10,11 @@
 [meta]
 standard        = "ISO/IEC 42001:2023"
 edition         = "2023"
-description     = "AI Management System standard — requirements for responsible AI development and use"
-ectoledger_version = "0.6.3"
+description     = "AI Management System standard - requirements for responsible AI development and use"
+ectoledger_version = "0.8.0"
 last_reviewed   = "2026-02-21"
 
-# ─── Clause 4 — Context of the organisation ────────────────────────────────────
+# ─── Clause 4 - Context of the organisation ────────────────────────────────────
 
 [[controls]]
 clause    = "4.1"
@@ -30,7 +30,7 @@ rationale = "Policy packs (SOC2, PCI-DSS, OWASP, ISO42001) express stakeholder r
 check     = "policy_hash_in_session"
 severity  = "medium"
 
-# ─── Clause 5 — Leadership ─────────────────────────────────────────────────────
+# ─── Clause 5 - Leadership ─────────────────────────────────────────────────────
 
 [[controls]]
 clause    = "5.1"
@@ -46,7 +46,7 @@ rationale = "Observation rules and guard logic enforce the AI policy at inferenc
 check     = "observation_policy_applied"
 severity  = "high"
 
-# ─── Clause 6 — Planning ───────────────────────────────────────────────────────
+# ─── Clause 6 - Planning ───────────────────────────────────────────────────────
 
 [[controls]]
 clause    = "6.1"
@@ -62,7 +62,7 @@ rationale = "Red-team module (red_team.rs) simulates adversarial inputs; finding
 check     = "red_team_findings_logged"
 severity  = "medium"
 
-# ─── Clause 8 — Operation ──────────────────────────────────────────────────────
+# ─── Clause 8 - Operation ──────────────────────────────────────────────────────
 
 [[controls]]
 clause    = "8.1"
@@ -92,7 +92,7 @@ rationale = "LLM backend, model name, and policy hash are recorded per session f
 check     = "llm_provenance_recorded"
 severity  = "high"
 
-# ─── Clause 9 — Performance evaluation ────────────────────────────────────────
+# ─── Clause 9 - Performance evaluation ────────────────────────────────────────
 
 [[controls]]
 clause    = "9.1"
@@ -115,7 +115,7 @@ rationale = "ISO 42001 compliance report download available via GUI and `/api/re
 check     = "report_export_available"
 severity  = "medium"
 
-# ─── Clause 10 — Improvement ──────────────────────────────────────────────────
+# ─── Clause 10 - Improvement ──────────────────────────────────────────────────
 
 [[controls]]
 clause    = "10.1"

@@ -3,16 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EctoLedger | Proof of What Your AI Did</title>
+  <title>IronVise | Pre-execution firewall and flight recorder for AI agents</title>
   <meta
     name="description"
-    content="EctoLedger is a tamper-proof audit trail for AI agents. Prove to regulators, courts, and customers exactly what your AI did. Open source, built in Rust."
+    content="Pre-execution firewall and tamper-evident flight recorder for AI agents. Blocks risky tool calls before they run and exports offline-verifiable audit certificates for EU AI Act Article 12 record-keeping and ISO 42001 evidence. Complements sandboxes such as Docker Sandboxes, Perplexity SPACE and E2B. Prototype."
   />
-  <meta property="og:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta property="og:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://ectospace.com/EctoLedger/marketing_assets/screenshots/1_dashboard.png" />
-  <meta name="twitter:image:alt" content="EctoLedger dashboard showing a tamper-proof audit trail of AI agent sessions and events" />
   <link rel="icon" href="images/ectoSpace-Logo.webp" type="image/webp" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -168,6 +163,7 @@
           <a href="features.html" class="transition-colors hover:text-white">Features</a>
           <a href="changelog.html" class="transition-colors hover:text-white">Changelog</a>
           <a href="demo.html" class="transition-colors hover:text-white">Demo</a>
+          <a href="verify.html" class="transition-colors hover:text-white">Verify</a>
         </nav>
         <div class="flex items-center gap-2">
           <a
@@ -204,6 +200,7 @@
           <a href="features.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Features</a>
           <a href="changelog.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Changelog</a>
           <a href="demo.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Demo</a>
+          <a href="verify.html" class="rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.06] hover:text-white">Verify</a>
         </div>
       </nav>
     </header>
@@ -215,17 +212,22 @@
             <div class="text-center">
               <div class="reveal flex flex-wrap items-center justify-center gap-4">
                 <img
-                  src="images/el-logo.webp"
+                  src="images/ironvise-mark.webp"
                   alt=""
                   class="h-20 w-auto sm:h-24"
                 />
-                <h1 class="font-display text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">EctoLedger</h1>
+                <h1 class="font-display text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">IronVise</h1>
               </div>
               <h2 class="reveal mx-auto mt-8 max-w-5xl font-display text-4xl leading-[1.04] tracking-tight sm:text-6xl lg:text-7xl">
-                Your AI agent made 47 decisions. Can you prove what it did?
+                Stop the risky tool call. Keep the proof.
               </h2>
               <p class="reveal mx-auto mt-6 max-w-3xl text-lg leading-relaxed text-zinc-300">
-                EctoLedger is a dashcam and emergency brake for AI agents: a security proxy that can block rogue commands before execution, then generate cryptographically verifiable evidence of what happened.
+                <strong class="text-white">Pre-execution firewall and tamper-evident flight recorder for AI agents.</strong>
+                IronVise blocks risky tool calls, such as reading SSH keys outside the workspace or <code class="font-mono text-base">rm -rf /</code>, before they run, and exports offline-verifiable audit certificates for EU AI Act Article 12 record-keeping (applies to Annex III high-risk systems from 2 December 2027) and ISO 42001 evidence.
+                Article 12 requires high-risk AI systems to keep automatic logs over their lifetime. It does not require those logs to be hard to edit afterwards. IronVise runs agent actions through policy checks and OS sandboxes and records every one in a hash-chained, Ed25519-signed ledger that a third party can verify offline - without your database, your keys, or your cooperation. Prototype; not independently audited.
+              </p>
+              <p class="reveal mx-auto mt-4 max-w-3xl text-base leading-relaxed text-zinc-300">
+                It complements your sandbox rather than replacing it. Docker Sandboxes (<code class="font-mono text-sm">sbx</code>), Perplexity SPACE or E2B limit what an agent can reach once a command runs; IronVise decides whether the command runs at all and keeps a signed record a third party can check. Use both.
               </p>
               <p class="reveal mx-auto mt-3 max-w-3xl text-sm text-zinc-400">
                 Built for teams running AI in high-risk workflows: security, compliance, platform engineering, and enterprise operations.
@@ -267,7 +269,7 @@
           <section id="use-cases" class="reveal scroll-mt-28 mt-10 sm:mt-12">
             <div class="glass rounded-3xl p-6 sm:p-8">
               <p class="font-mono text-xs uppercase tracking-[0.22em] text-mint-300">Use Cases</p>
-              <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">What teams can use EctoLedger for</h2>
+              <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">What teams can use IronVise for</h2>
               <div class="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                   <h3 class="font-display text-lg text-white">Security Operations</h3>
@@ -292,29 +294,30 @@
           <div class="reveal mesh-border glass mt-14 rounded-[28px] p-3 shadow-glow sm:mt-16 sm:p-4">
             <div class="overflow-hidden rounded-[22px] border border-white/10 bg-ink-900/80">
               <video
-                src="marketing_assets/videos/gui_demo.mp4"
+                src="marketing_assets/videos/ironvise_gui_demo.mp4"
                 autoplay
                 muted
                 loop
                 playsinline
-                poster="marketing_assets/videos/gui_demo.gif"
+                poster="marketing_assets/videos/ironvise_gui_demo.gif"
                 class="w-full"
+                aria-label="IronVise interface walkthrough with demonstration data"
               ></video>
             </div>
           </div>
 
           <div class="reveal mt-10 overflow-hidden rounded-full border border-white/10 bg-white/[0.03] py-2">
             <div class="flex w-max animate-marquee gap-3">
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">EU AI Act ready</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Tamper-proof audit trail</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Article 12 mapping</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Tamper-evident audit trail</span>
               <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">4-layer AI guardrails</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Court-grade certificates</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Open source Rust</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">EU AI Act ready</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Tamper-proof audit trail</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Signed audit certificates</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Source available · BUSL-1.1</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Article 12 mapping</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Tamper-evident audit trail</span>
               <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">4-layer AI guardrails</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Court-grade certificates</span>
-              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Open source Rust</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Signed audit certificates</span>
+              <span class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 font-mono text-xs uppercase tracking-[0.17em] text-zinc-300">Source available · BUSL-1.1</span>
             </div>
           </div>
         </div>
@@ -324,9 +327,9 @@
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8">
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">Clarity first</p>
-            <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">What EctoLedger is, and what it is not</h2>
+            <h2 class="mt-3 font-display text-2xl tracking-tight sm:text-3xl">What IronVise is, and what it is not</h2>
             <p class="mt-4 text-sm text-zinc-300 sm:text-base">
-              EctoLedger is not a crypto trading product. Here, "ledger" means a tamper-evident audit log for AI agent behavior.
+              IronVise is not a crypto trading product. Here, "ledger" means a tamper-evident audit log for AI agent behavior.
             </p>
             <div class="mt-6 grid gap-4 md:grid-cols-3">
               <article class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
@@ -335,7 +338,7 @@
                   <li>Records each AI action in an append-only, hash-chained audit trail.</li>
                   <li>Prevents damage by blocking denied actions before execution (policy + guard + strict schema + Tripwire).</li>
                   <li>Detects prompt-injection and goal-hijack patterns in model output before commit/execution.</li>
-                  <li>Exports verifiable evidence (`.elc` certificates) for customers, auditors, and regulators.</li>
+                  <li>Exports verifiable evidence (<code class="font-mono text-xs">.elc</code> certificates) for customers, auditors, and regulators.</li>
                   <li>Adds optional sandbox isolation tiers for execution paths, including Firecracker on Linux and Apple Hypervisor guard isolation on supported Apple Silicon builds.</li>
                 </ul>
               </article>
@@ -354,7 +357,7 @@
                 <ul class="mt-3 space-y-2 text-sm text-zinc-300">
                   <li>It does not trade, hold, or manage cryptocurrencies.</li>
                   <li>It is not a replacement for your SIEM or ticketing platform.</li>
-                  <li>It is not a universal host EDR outside EctoLedger-managed agent actions.</li>
+                  <li>It is not a universal host EDR outside IronVise-managed agent actions.</li>
                   <li>It does not guarantee legal outcomes by itself.</li>
                 </ul>
               </article>
@@ -367,13 +370,13 @@
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8">
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Flowchart</p>
-            <h2 class="mt-3 font-display text-3xl tracking-tight sm:text-4xl">How EctoLedger controls AI actions</h2>
+            <h2 class="mt-3 font-display text-3xl tracking-tight sm:text-4xl">How IronVise controls AI actions</h2>
             <p class="mt-4 max-w-3xl text-sm text-zinc-300 sm:text-base">
               Every proposed action is checked before execution. Denied actions are blocked and recorded. Allowed actions execute and are sealed into cryptographic evidence.
             </p>
 
             <div class="mt-6 overflow-x-auto rounded-2xl border border-white/10 bg-ink-900/70 p-4">
-              <svg viewBox="0 0 1180 360" class="min-w-[980px] w-full h-auto" role="img" aria-label="EctoLedger action control flowchart">
+              <svg viewBox="0 0 1180 360" class="min-w-[980px] w-full h-auto" role="img" aria-label="IronVise action control flowchart">
                 <defs>
                   <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                     <polygon points="0,0 8,4 0,8" fill="#6b7280"></polygon>
@@ -429,17 +432,18 @@
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8">
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">See it in action</p>
-            <h2 class="mt-3 font-display text-3xl tracking-tight sm:text-4xl">Watch a full AI audit workflow</h2>
+            <h2 class="mt-3 font-display text-3xl tracking-tight sm:text-4xl">Explore an audit trail in IronVise</h2>
             <p class="mt-4 max-w-3xl text-sm text-zinc-300 sm:text-base">
-              Start with a task, watch the guardrails evaluate each action, and finish with a verifiable certificate proving what happened.
+              Explore recorded actions, policy decisions, data receipts, and verification in the current interface. This walkthrough uses demonstration data.
             </p>
             <div class="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/80">
               <video
-                src="marketing_assets/videos/ectoledger_demo.mp4"
+                src="marketing_assets/videos/ironvise_audit_demo.mp4"
                 controls
                 playsinline
-                poster="marketing_assets/videos/ectoledger_demo.gif"
+                poster="marketing_assets/videos/ironvise_audit_demo.gif"
                 class="w-full"
+                aria-label="IronVise interface walkthrough with demonstration data"
               ></video>
             </div>
           </div>
@@ -455,7 +459,7 @@
           <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <article class="reveal glass rounded-2xl p-5">
               <h3 class="font-display text-lg">Compliance Teams</h3>
-              <p class="mt-3 text-sm text-zinc-300">EU AI Act timelines are approaching. EctoLedger gives you auditable evidence for high-risk AI workflows now.</p>
+              <p class="mt-3 text-sm text-zinc-300">EU AI Act timelines are approaching. IronVise gives you auditable evidence for high-risk AI workflows now.</p>
             </article>
             <article class="reveal glass rounded-2xl p-5">
               <h3 class="font-display text-lg">Engineering Teams</h3>
@@ -468,7 +472,7 @@
             </article>
             <article class="reveal glass rounded-2xl p-5">
               <h3 class="font-display text-lg">Auditors and Regulators</h3>
-              <p class="mt-3 text-sm text-zinc-300">Export `.elc` certificates and verify them offline with a standalone binary. No vendor trust required.</p>
+              <p class="mt-3 text-sm text-zinc-300">Export <code class="font-mono text-xs">.elc</code> certificates and verify them offline with a standalone binary. No vendor trust required.</p>
             </article>
           </div>
         </div>
@@ -495,7 +499,7 @@
           <div class="grid gap-4 lg:grid-cols-12">
             <article class="reveal glass rounded-3xl p-6 sm:p-8 lg:col-span-6">
               <p class="font-mono text-xs uppercase tracking-[0.2em] text-aqua-300">Core Ledger</p>
-              <h3 class="mt-3 font-display text-2xl">Tamper-proof activity log</h3>
+              <h3 class="mt-3 font-display text-2xl">Tamper-evident activity log</h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-300 sm:text-base">
                 Capture every model decision, tool action, and operator approval in a timeline you can replay and verify.
               </p>
@@ -506,21 +510,21 @@
               <p class="font-mono text-xs uppercase tracking-[0.2em] text-brand-300">4-layer semantic guard</p>
               <h3 class="mt-3 font-display text-xl">4 layers of protection before any action executes</h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-300">
-                Policy engine -> dual-LLM guard -> strict schema validation -> Tripwire. If a proposed action is unsafe, it is blocked before execution.
+                Policy engine, strict schema validation and Tripwire check every proposed action; the dual-LLM semantic guard adds a fourth layer when it is turned on. An action that fails a layer is blocked before it runs.
               </p>
               <img src="marketing_assets/screenshots/2_semantic_guard_blocked.png" alt="Semantic guard blocked" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
             </article>
 
             <article class="reveal glass rounded-3xl p-6 sm:p-8 lg:col-span-3">
               <p class="font-mono text-xs uppercase tracking-[0.2em] text-mint-300">.elc audit certificates</p>
-              <h3 class="mt-3 font-display text-xl">Audit certificates that hold up in court</h3>
+              <h3 class="mt-3 font-display text-xl">Audit certificates you can verify offline</h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-300">
                 Export a self-contained certificate with cryptographic proofs and verify it offline using the standalone <code class="font-mono text-xs rounded bg-white/10 px-1">verify-cert</code> binary.
               </p>
               <p class="mt-2 text-xs text-zinc-400">
-                Legal admissibility depends on jurisdiction and process; EctoLedger provides cryptographic evidence to support review and testimony.
+                Legal admissibility depends on jurisdiction and process; IronVise provides cryptographic evidence to support review and testimony.
               </p>
-              <img src="marketing_assets/screenshots/3_audit_certificate.png" alt="Audit certificate screen" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
+              <img src="marketing_assets/screenshots/3_audit_certificate.png" alt="Session verification and audit evidence" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
             </article>
 
             <article class="reveal glass rounded-3xl p-6 sm:p-8 lg:col-span-4">
@@ -532,13 +536,13 @@
             <article class="reveal glass rounded-3xl p-6 sm:p-8 lg:col-span-4">
               <p class="font-mono text-xs uppercase tracking-[0.2em] text-aqua-300">Metrics</p>
               <h3 class="mt-3 font-display text-xl">Live reliability telemetry</h3>
-              <img src="marketing_assets/screenshots/gui_5_metrics.png" alt="Metrics dashboard" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
+              <img src="marketing_assets/screenshots/gui_5_metrics.png" alt="Prometheus metrics view" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
             </article>
 
             <article class="reveal glass rounded-3xl p-6 sm:p-8 lg:col-span-4">
               <p class="font-mono text-xs uppercase tracking-[0.2em] text-mint-300">Active Audit</p>
               <h3 class="mt-3 font-display text-xl">Real-time workflow traceability</h3>
-              <img src="marketing_assets/screenshots/gui_6_active_audit.png" alt="Active audit panel" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
+              <img src="marketing_assets/screenshots/gui_6_active_audit.png" alt="Live feed of ledger events" class="mt-5 rounded-xl border border-white/10" loading="lazy" />
             </article>
           </div>
         </div>
@@ -554,7 +558,7 @@
             <div class="reveal glass rounded-3xl p-6 sm:p-8">
               <h3 class="font-display text-xl text-white">State lives in the ledger</h3>
               <p class="mt-3 text-sm leading-relaxed text-zinc-300">
-                The Rust process is a transient worker. All durable state (event log and snapshots) lives in the configured backend (PostgreSQL or SQLite). The binary has no long-term memory; it restores state from the ledger on each run.
+                The Rust process is a transient worker. All durable state - event log and snapshots - lives in the configured backend (PostgreSQL or SQLite). The binary has no long-term memory; it restores state from the ledger on each run.
               </p>
             </div>
             <div class="reveal glass rounded-3xl p-6 sm:p-8">
@@ -567,7 +571,7 @@
           <div class="reveal mt-6 glass rounded-3xl p-6 sm:p-8">
             <p class="font-mono text-xs uppercase tracking-[0.2em] text-zinc-400">Industry policy packs</p>
             <p class="mt-2 text-sm text-zinc-300">
-              SOC 2 Type II, PCI-DSS v4.0, OWASP Top 10 2021, ISO 42001:2023 (AI management). Load via <code class="font-mono rounded bg-white/10 px-1">--policy crates/host/policies/soc2-audit.toml</code> and similar.
+              SOC 2, PCI DSS v4.0.1 and OWASP Top 10 rule packs: load one with <code class="font-mono rounded bg-white/10 px-1">--policy crates/host/policies/soc2-audit.toml</code>, or choose it for runs in the desktop app. ISO 42001:2023 ships as a controls mapping.
             </p>
           </div>
         </div>
@@ -635,9 +639,9 @@
           </div>
           <div class="grid gap-4 lg:grid-cols-3">
             <article class="reveal glass rounded-3xl p-6">
-              <h3 class="font-display text-xl text-white">Run your first production-grade audit</h3>
+              <h3 class="font-display text-xl text-white">Run a full audit with a verifiable export</h3>
               <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-zinc-300">
-                <li>Use PostgreSQL backend for full command support.</li>
+                <li>Use SQLite for zero-config single-machine audits, or PostgreSQL for multi-agent orchestration.</li>
                 <li>Set guard configuration and keep <code class="font-mono text-xs">GUARD_REQUIRED=true</code>.</li>
                 <li>Run <code class="font-mono text-xs">audit \"&lt;goal&gt;\"</code>, then export and verify <code class="font-mono text-xs">.elc</code>.</li>
               </ol>
@@ -646,14 +650,14 @@
               <h3 class="font-display text-xl text-white">Choose demo vs SQLite vs PostgreSQL</h3>
               <ul class="mt-3 space-y-2 text-sm text-zinc-300">
                 <li><strong class="text-white">Demo:</strong> fast product tour with isolated data.</li>
-                <li><strong class="text-white">SQLite:</strong> local/CI viewing and reporting workflows.</li>
-                <li><strong class="text-white">PostgreSQL:</strong> full audits, orchestration, anchoring, and red-team tests.</li>
+                <li><strong class="text-white">SQLite:</strong> zero-config audits, certificates, anchoring, and local SIEM webhooks.</li>
+                <li><strong class="text-white">PostgreSQL:</strong> production scale plus multi-agent orchestrate / diff-audit / red-team.</li>
               </ul>
             </article>
             <article class="reveal glass rounded-3xl p-6">
               <h3 class="font-display text-xl text-white">Prepare evidence for auditors</h3>
               <ul class="mt-3 space-y-2 text-sm text-zinc-300">
-                <li>Run with policy packs (SOC 2, PCI-DSS, OWASP, ISO 42001).</li>
+                <li>Run with policy packs (SOC 2, PCI-DSS, OWASP).</li>
                 <li>Export report + <code class="font-mono text-xs">.elc</code> certificate.</li>
                 <li>Verify evidence offline with <code class="font-mono text-xs">verify-cert</code>.</li>
               </ul>
@@ -669,24 +673,33 @@
       <section id="updates" class="py-16 sm:py-24">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="reveal glass rounded-3xl p-6 sm:p-8">
-            <p class="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">v0.6.3 release</p>
+            <p class="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">v0.8.0 · Release notes</p>
             <h2 class="mt-3 font-display text-3xl tracking-tight sm:text-4xl">Changelog and updates</h2>
             <p class="mt-4 max-w-3xl text-sm text-zinc-300">
-              Highlights from <a href="https://github.com/EctoSpace/EctoLedger" class="text-aqua-300 hover:text-aqua-200 underline">v0.6</a>. Full README and CLI reference live on GitHub.
+              New in <a href="changelog.html" class="text-aqua-300 hover:text-aqua-200 underline">v0.8</a>: security hardening, an honest desktop first-run path, and a shorter GUI.
+              Full README and CLI reference live on GitHub.
             </p>
             <div class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Pluggable ledger backends</strong>: PostgreSQL or SQLite via <code class="font-mono text-xs">DATABASE_URL</code>; <code class="font-mono text-xs">LedgerBackend</code> trait for custom stores.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Tauri 2 management GUI</strong>: Glassmorphic desktop app: dashboard, metrics, sessions, policy editor, Tripwire, certificate export.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Python &amp; TypeScript SDKs</strong>: Typed REST clients; LangChain LedgerTool and AutoGen LedgerHook.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Extended webhooks</strong>: HMAC-signed SIEM egress (JSON, CEF, LEEF) for GuardDenial and TripwireRejection.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">W3C Verifiable Credentials</strong>: VC-JWT on session completion; Ed25519-signed, <code class="font-mono text-xs">did:key:</code> anchored.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">ISO 42001:2023</strong>: Machine-readable policy pack (14 controls) and compliance whitepaper.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">4-layer semantic guard</strong>: Policy → dual-LLM guard → strict schema → Tripwire before every commit.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Firecracker microVM sandbox</strong>: Hardware execution isolation for <code class="font-mono text-xs">run_command</code> (Linux).</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">EVM chain anchoring</strong>: Publish ledger tip hash to any EVM chain via <code class="font-mono text-xs">anchor-session --chain ethereum</code>.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">SP1 ZK proofs</strong>: Provable policy compliance without exposing raw event payloads.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">.elc certificates</strong>: Five-pillar verification; standalone <code class="font-mono text-xs">verify-cert</code> binary.</div>
-              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Key rotation &amp; config</strong>: Automatic Ed25519 rotation, orchestrator policy injection, configurable bind port, DB pool scaling.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Fail-closed sandboxing</strong> - A sandbox that cannot be applied now aborts the action instead of silently degrading it; <code class="font-mono text-xs">ECTO_SANDBOX_PERMISSIVE</code> opts back out.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Symlink TOCTOU defence</strong> - <code class="font-mono text-xs">read_file</code> refuses to follow a leaf swapped for a symlink between validation and open, with regression tests for the race window.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Canonical v2 hashing</strong> - All write paths share one byte layout; pre-v0.8 ledgers still verify through the v1 fallback.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Demo mode labelled insecure</strong> - The demo stack names every weakening it applies and logs a startup warning; <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/getting-started/running-securely.md" class="text-aqua-300 hover:text-aqua-200 underline">running securely</a> covers the hardened path.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Safer embedded PostgreSQL</strong> - Startup no longer SIGKILLs whatever holds port 5432; only instances it owns are reclaimed.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Working fresh clone</strong> - <code class="font-mono text-xs">make start</code>, <code class="font-mono text-xs">make demo</code>, and the Docker demo all verified from a clean checkout.</div>
+            </div>
+            <h3 class="mt-8 font-display text-xl text-white">Earlier: v0.6</h3>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Pluggable ledger backends</strong> - PostgreSQL or SQLite via <code class="font-mono text-xs">DATABASE_URL</code>; <code class="font-mono text-xs">LedgerBackend</code> trait for custom stores.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Tauri 2 management GUI</strong> - Glassmorphic desktop app: dashboard, metrics, sessions, policy editor, Tripwire, certificate export.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Python &amp; TypeScript SDKs</strong> - Typed REST clients; LangChain LedgerCallbackHandler and AutoGen LedgerHook.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Extended webhooks</strong> - HMAC-signed SIEM egress (JSON, CEF, LEEF) for GuardDenial and TripwireRejection.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">W3C Verifiable Credentials</strong> - VC-JWT on session completion; Ed25519-signed, <code class="font-mono text-xs">did:key:</code> anchored.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">ISO 42001:2023</strong> - Machine-readable control mapping (14 controls) from clauses to ledger evidence.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">4-layer pre-execution checks</strong> - Policy, strict schema and Tripwire on every action; the dual-LLM guard when turned on.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Firecracker microVM sandbox</strong> - Hardware execution isolation for <code class="font-mono text-xs">run_command</code> (Linux, guest image you supply).</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Offline audit certificates</strong> - Inspect signed provenance without a database or model.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">.elc certificates</strong> - Five-pillar verification; standalone <code class="font-mono text-xs">verify-cert</code> binary.</div>
+              <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-200"><strong class="text-white">Key rotation &amp; config</strong> - Automatic session-key rotation, orchestrator policy injection, configurable bind port, DB pool scaling.</div>
             </div>
           </div>
         </div>
@@ -698,18 +711,18 @@
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-aqua-300">Developers</p>
             <h2 class="mt-4 font-display text-3xl tracking-tight sm:text-5xl">Quick start, SDKs, and CLI</h2>
             <p class="mt-4 max-w-2xl mx-auto text-sm text-zinc-300">
-              Zero-friction setup: launcher scripts for macOS/Linux/Windows, Docker demo, or SQLite for local dev. Full docs on <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="text-aqua-300 hover:text-aqua-200 underline">GitHub</a>.
+              Zero-friction setup: <code class="font-mono text-xs rounded bg-white/10 px-1">make</code> targets on macOS/Linux, a PowerShell launcher on Windows, a Docker demo, or SQLite for local dev. Full docs on <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="text-aqua-300 hover:text-aqua-200 underline">GitHub</a>.
             </p>
           </div>
 
           <div class="grid gap-8 lg:grid-cols-2">
             <div class="reveal glass rounded-3xl p-6 sm:p-8">
-              <h3 class="font-display text-xl text-white">Quick start (v0.6)</h3>
-              <p class="mt-2 text-sm text-zinc-300">Clone, run launcher: backend + Tauri GUI. Or <code class="font-mono text-xs rounded bg-white/10 px-1">./ectoledger-mac --demo</code> for zero-config demo with embedded Postgres.</p>
+              <h3 class="font-display text-xl text-white">Quick start</h3>
+              <p class="mt-2 text-sm text-zinc-300">Clone, then <code class="font-mono text-xs rounded bg-white/10 px-1">make start</code> for the desktop GUI - it runs its own backend in-process. Or <code class="font-mono text-xs rounded bg-white/10 px-1">make demo</code> for a zero-config SQLite dashboard with no Docker or PostgreSQL.</p>
               <ul class="mt-4 space-y-2 text-sm text-zinc-300">
-                <li><strong class="text-white">macOS:</strong> <code class="font-mono text-xs">./ectoledger-mac</code></li>
-                <li><strong class="text-white">Linux:</strong> <code class="font-mono text-xs">./ectoledger-linux</code></li>
-                <li><strong class="text-white">Windows:</strong> <code class="font-mono text-xs">.\ectoledger-win.ps1</code></li>
+                <li><strong class="text-white">Desktop GUI:</strong> <code class="font-mono text-xs">make start</code></li>
+                <li><strong class="text-white">Dashboard only:</strong> <code class="font-mono text-xs">make demo</code></li>
+                <li><strong class="text-white">Windows:</strong> <code class="font-mono text-xs">.\ironvise-win.ps1</code></li>
                 <li><strong class="text-white">Docker:</strong> <code class="font-mono text-xs">docker compose -f docker-compose.demo.yml up</code></li>
               </ul>
               <a href="https://github.com/EctoSpace/EctoLedger#quick-start" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">Quick Start on GitHub →</a>
@@ -719,22 +732,22 @@
               <h3 class="font-display text-xl text-white">CLI at a glance</h3>
               <p class="mt-2 text-sm text-zinc-300">Serve dashboard, run audits, export reports and certificates.</p>
               <ul class="mt-4 space-y-1.5 font-mono text-xs text-zinc-300">
-                <li><code>serve</code>: Observer dashboard (default http://localhost:3000)</li>
-                <li><code>audit "&lt;goal&gt;"</code>: Run cognitive loop with policy/guard</li>
+                <li><code>serve</code> - Observer dashboard (default http://localhost:3000)</li>
+                <li><code>audit "&lt;goal&gt;"</code> - Run cognitive loop with policy/guard</li>
                 <li><code>report &lt;session_id&gt; --format certificate --output audit.elc</code></li>
-                <li><code>verify-certificate audit.elc</code>: Offline .elc verification</li>
-                <li><code>orchestrate "&lt;goal&gt;"</code>: Recon → Analysis → Verify</li>
-                <li><code>anchor-session &lt;id&gt;</code>: Bitcoin OTS or EVM anchoring</li>
-                <li><code>red-team --target-session &lt;id&gt;</code>: Adversarial testing</li>
-                <li><code>prove-audit &lt;id&gt;</code>: SP1 ZK proof (build with <code>--features zk</code>)</li>
+                <li><code>verify-certificate audit.elc</code> - Offline .elc verification</li>
+                <li><code>orchestrate "&lt;goal&gt;"</code> - Recon → Analysis → Verify</li>
+                <li><code>anchor-session &lt;id&gt;</code> - OpenTimestamps timestamp</li>
+                <li><code>red-team --target-session &lt;id&gt;</code> - Adversarial testing</li>
+                <li><code>prove-audit &lt;id&gt;</code> - unavailable in 0.8; use certificate export</li>
               </ul>
-              <a href="https://github.com/EctoSpace/EctoLedger/blob/v0.6/README.md#cli-reference" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">CLI reference →</a>
+              <a href="https://github.com/EctoSpace/EctoLedger/blob/main/docs/guides/cli.md" class="mt-4 inline-block text-sm font-medium text-aqua-300 hover:text-aqua-200">CLI reference →</a>
             </div>
           </div>
 
           <div class="reveal mt-8 glass rounded-3xl p-6 sm:p-8">
             <h3 class="font-display text-xl text-white">Python SDK</h3>
-            <p class="mt-2 text-sm text-zinc-300">pip install ectoledger-sdk · Optional: <code class="font-mono text-xs">[langchain]</code> or <code class="font-mono text-xs">[autogen]</code>. <a href="https://github.com/EctoSpace/EctoLedger/sdk/python" class="text-aqua-300 hover:text-aqua-200">sdk/python</a></p>
+            <p class="mt-2 text-sm text-zinc-300">From a clone: <code class="font-mono text-xs">pip install ./sdk/python</code> installs the <code class="font-mono text-xs">ironvise</code> package. Optional extras: <code class="font-mono text-xs">[langchain]</code> or <code class="font-mono text-xs">[autogen]</code>. <a href="https://github.com/EctoSpace/EctoLedger/tree/main/sdk/python" class="text-aqua-300 hover:text-aqua-200">sdk/python</a></p>
             <div class="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-ink-950/85">
               <div class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
                 <span class="h-2.5 w-2.5 rounded-full bg-red-400/70"></span>
@@ -742,16 +755,25 @@
                 <span class="h-2.5 w-2.5 rounded-full bg-green-400/70"></span>
                 <span class="ml-2 font-mono text-xs text-zinc-400">quickstart.py</span>
               </div>
-              <pre class="p-4 font-mono text-xs leading-relaxed text-zinc-200 sm:text-sm overflow-x-auto"><code>import asyncio; from ectoledger_sdk import LedgerClient; async def main(): async with LedgerClient("http://localhost:3000") as client: session = await client.create_session(goal="Audit Cargo dependencies"); await client.seal_session(session.session_id); asyncio.run(main())</code></pre>
+              <pre class="p-4 font-mono text-xs leading-relaxed text-zinc-200 sm:text-sm overflow-x-auto"><code>import asyncio
+from ironvise_sdk import LedgerClient
+
+async def main():
+    async with LedgerClient("http://localhost:3000", bearer_token="&lt;token&gt;") as client:
+        session = await client.create_session(goal="Audit Cargo dependencies", record=True)
+        await client.append_event(session.session_id, {"step": "read", "file": "Cargo.toml"})
+        await client.seal_session(session.session_id)
+
+asyncio.run(main())</code></pre>
             </div>
           </div>
 
           <div class="reveal mt-8 glass rounded-3xl p-6 sm:p-8">
             <h3 class="font-display text-xl text-white">TypeScript SDK</h3>
-            <p class="mt-2 text-sm text-zinc-300">npm install ectoledger-sdk · Zero deps, native fetch. <a href="https://github.com/EctoSpace/EctoLedger/sdk/typescript" class="text-aqua-300 hover:text-aqua-200">sdk/typescript</a></p>
-            <pre class="mt-4 p-4 rounded-2xl border border-white/10 bg-ink-950/85 font-mono text-xs leading-relaxed text-zinc-200 overflow-x-auto"><code>import { EctoLedgerClient } from "ectoledger-sdk";
-const client = new EctoLedgerClient({ baseUrl: "http://localhost:3000" });
-const session = await client.createSession("Summarise quarterly report");
+            <p class="mt-2 text-sm text-zinc-300">Build from <code class="font-mono text-xs">sdk/typescript</code> with npm install and npm run build. Package: <code class="font-mono text-xs">ironvise</code> · Zero runtime deps, native fetch. <a href="https://github.com/EctoSpace/EctoLedger/tree/main/sdk/typescript" class="text-aqua-300 hover:text-aqua-200">sdk/typescript</a></p>
+            <pre class="mt-4 p-4 rounded-2xl border border-white/10 bg-ink-950/85 font-mono text-xs leading-relaxed text-zinc-200 overflow-x-auto"><code>import { IronViseClient } from "ironvise";
+const client = new IronViseClient({ baseUrl: "http://localhost:3000", bearerToken: "&lt;token&gt;" });
+const session = await client.createSession({ goal: "Summarise quarterly report", record: true });
 await client.appendEvent(session.id, { step: "retrieved_docs", count: 42 });
 await client.sealSession(session.id);
 const cert = await client.exportCertificate(session.id);</code></pre>
@@ -760,12 +782,12 @@ const cert = await client.exportCertificate(session.id);</code></pre>
           <div class="reveal mt-8 glass rounded-3xl p-6 sm:p-8">
             <p class="font-mono text-xs uppercase tracking-[0.2em] text-mint-300">Audit certificates (.elc)</p>
             <h3 class="mt-2 font-display text-lg text-white">Five verification pillars</h3>
-            <p class="mt-2 text-sm text-zinc-300">Every completed session can be exported as a self-contained .elc verifiable offline. Optional sixth: SP1 ZK validity proof. The <code class="font-mono text-xs rounded bg-white/10 px-1">verify-cert</code> binary is static and dependency-free for auditors.</p>
+            <p class="mt-2 text-sm text-zinc-300">Every completed session can be exported as a self-contained .elc verifiable offline. SP1 proof generation is unavailable in 0.8. Auditors can run <code class="font-mono text-xs rounded bg-white/10 px-1">verify-cert</code> offline without a database, model, or Rust toolchain.</p>
             <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <div class="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 text-center">
                 <span class="font-mono text-2xl font-bold text-mint-400">1</span>
                 <h4 class="mt-2 font-display text-sm font-semibold text-white">Ed25519 signature</h4>
-                <p class="mt-1 text-xs text-zinc-400">Tamper-resistance; payload signed with session keypair; no trusted third party.</p>
+                <p class="mt-1 text-xs text-zinc-400">Tamper evidence; payload signed with the session keypair; no trusted third party.</p>
               </div>
               <div class="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 text-center">
                 <span class="font-mono text-2xl font-bold text-mint-400">2</span>
@@ -779,8 +801,8 @@ const cert = await client.exportCertificate(session.id);</code></pre>
               </div>
               <div class="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 text-center">
                 <span class="font-mono text-2xl font-bold text-mint-400">4</span>
-                <h4 class="mt-2 font-display text-sm font-semibold text-white">OTS / Bitcoin or EVM anchor</h4>
-                <p class="mt-1 text-xs text-zinc-400">Temporal non-repudiation; proves completion before block N.</p>
+                <h4 class="mt-2 font-display text-sm font-semibold text-white">OpenTimestamps anchor</h4>
+                <p class="mt-1 text-xs text-zinc-400">Timestamping; once the OpenTimestamps stamp is upgraded, proves the session existed before block N.</p>
               </div>
               <div class="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 text-center">
                 <span class="font-mono text-2xl font-bold text-mint-400">5</span>
@@ -797,10 +819,11 @@ const cert = await client.exportCertificate(session.id);</code></pre>
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="glass flex flex-col items-center justify-between gap-4 rounded-2xl px-6 py-5 text-sm text-zinc-400 md:flex-row">
           <div class="flex items-center gap-2">
-            <img src="images/el-logo.webp" alt="EctoSpace" class="h-7 w-auto max-w-[100px] object-contain" />
+            <img src="images/ironvise-mark.webp" alt="IronVise" class="h-7 w-auto max-w-[100px] object-contain" />
             <span class="text-zinc-500">·</span>
-            <span>EctoLedger</span>
+            <span>IronVise</span>
           </div>
+          <p>Enterprise and consulting (ISO 42001 and SOC 2 policy packs, SIEM integration, EU AI Act Article 12 setup): <a href="mailto:ironvise@ectospace.com" class="text-aqua-300 hover:text-aqua-200">ironvise@ectospace.com</a></p>
           <p>&copy; 2026 EctoSpace</p>
         </div>
       </div>

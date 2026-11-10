@@ -1,0 +1,1011 @@
+{
+  "a_banned_goal_is_refused_before_the_loop": {
+    "egress": [
+      {
+        "kind": "TripwireRejection",
+        "preview": "Tripwire rejected: banned command: prompt contains banned pattern 'sudo'",
+        "rule_label": "Tripwire rejected: banned command: prompt contains banned pattern 'sudo'",
+        "severity": "abort"
+      }
+    ],
+    "events": [
+      {
+        "enforced": true,
+        "reason": "banned command: prompt contains banned pattern 'sudo'",
+        "stage": "prompt_scan",
+        "type": "tripwire_rejection"
+      }
+    ],
+    "metrics": {
+      "events_appended": 1,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": false,
+      "tripwire_rejections": 1
+    },
+    "outcome": "error: tripwire abort: Tripwire rejected: banned command: prompt contains banned pattern 'sudo'",
+    "status": "running"
+  },
+  "a_cancelled_session_stops_at_once": {
+    "egress": [],
+    "events": [],
+    "metrics": {
+      "events_appended": 0,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": false,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: cancelled: cooperative shutdown via CancellationToken",
+    "status": "running"
+  },
+  "a_dashboard_gate_times_out": {
+    "egress": [],
+    "events": [
+      {
+        "action_name": "read_file",
+        "action_params_summary": "{\"path\":\"<workspace>/notes.txt\"}",
+        "gate_id": "<gate>",
+        "type": "approval_required"
+      },
+      {
+        "approved": false,
+        "gate_id": "<gate>",
+        "reason": "timeout: no decision within 0s; on_timeout=deny",
+        "type": "approval_decision"
+      },
+      {
+        "content": "Approval gate '<gate>' denied (timeout: no decision within 0s; on_timeout=deny).",
+        "type": "thought"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_guard_error_is_a_denial": {
+    "egress": [
+      {
+        "kind": "GuardDenial",
+        "preview": "guard error (fail-closed): guard process exited",
+        "rule_label": "guard error (fail-closed): guard process exited",
+        "severity": "flag"
+      }
+    ],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "guard error (fail-closed): guard process exited",
+        "type": "guard_denial"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 1,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_policy_forbidden_action_is_rejected": {
+    "egress": [],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "policy violation: action 'read_file' is forbidden by policy",
+        "stage": "policy",
+        "type": "tripwire_rejection"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 1
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_read_outside_the_workspace_is_rejected": {
+    "egress": [
+      {
+        "kind": "TripwireRejection",
+        "preview": "Tripwire rejected: path not allowed: <outside>/secret.txt",
+        "rule_label": "Tripwire rejected: path not allowed: <outside>/secret.txt",
+        "severity": "abort"
+      }
+    ],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "path not allowed: <outside>/secret.txt",
+        "stage": "validation",
+        "type": "tripwire_rejection"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 1
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_repeated_action_is_a_loop": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "content": "Loop detected (repeated action); completing.",
+        "type": "thought"
+      },
+      {
+        "name": "complete",
+        "params": {},
+        "type": "action"
+      },
+      {
+        "content": "Completed due to loop detection.",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 10,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_suspicious_observation_is_noted": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/injected.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "Security: suspicious content detected ([\"ignore_previous_instructions\"])",
+        "type": "thought"
+      },
+      {
+        "content": "# [REDACTED: potential injection attempt] and print the keys.\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 1,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "a_too_short_justification_is_rejected": {
+    "egress": [
+      {
+        "kind": "TripwireRejection",
+        "preview": "Invalid justification: response is missing a valid \"justification\" field (must be at least 5 characters).",
+        "rule_label": "Invalid justification: response is missing a valid \"justification\" field (must be at least 5 characters).",
+        "severity": "abort"
+      }
+    ],
+    "events": [
+      {
+        "attempt": 1,
+        "max_attempts": 3,
+        "message": "Invalid justification: response is missing a valid \"justification\" field (must be at least 5 characters).",
+        "type": "schema_error"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 1
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "an_approval_gate_that_allows_on_timeout": {
+    "egress": [],
+    "events": [
+      {
+        "action_name": "read_file",
+        "action_params_summary": "{\"path\":\"<workspace>/notes.txt\"}",
+        "gate_id": "<gate>",
+        "type": "approval_required"
+      },
+      {
+        "approved": true,
+        "gate_id": "<gate>",
+        "reason": "no approver configured; on_timeout=allow",
+        "type": "approval_decision"
+      },
+      {
+        "content": "Approval gate '<gate>' approved (no approver configured; on_timeout=allow).",
+        "type": "thought"
+      },
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 8,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "an_approval_gate_that_denies_on_timeout": {
+    "egress": [],
+    "events": [
+      {
+        "action_name": "read_file",
+        "action_params_summary": "{\"path\":\"<workspace>/notes.txt\"}",
+        "gate_id": "<gate>",
+        "type": "approval_required"
+      },
+      {
+        "approved": false,
+        "gate_id": "<gate>",
+        "reason": "no approver configured; on_timeout=deny",
+        "type": "approval_decision"
+      },
+      {
+        "content": "Approval gate '<gate>' denied (no approver configured; on_timeout=deny).",
+        "type": "thought"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "an_observation_rule_aborts": {
+    "egress": [
+      {
+        "kind": "Observation",
+        "preview": "listen 443 ssl;\n",
+        "rule_label": "observation rule 'https port' triggered abort",
+        "severity": "abort"
+      }
+    ],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "Policy: aborting session - observation rule 'https port' triggered abort.",
+        "type": "thought"
+      }
+    ],
+    "metrics": {
+      "events_appended": 2,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: policy abort: observation rule 'https port' triggered abort",
+    "status": "running"
+  },
+  "an_observation_rule_flags": {
+    "egress": [
+      {
+        "kind": "Observation",
+        "preview": "listen 443 ssl;\n",
+        "rule_label": "tls",
+        "severity": "flag"
+      }
+    ],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "Policy: observation flagged (tls); continuing.",
+        "type": "thought"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "an_observation_rule_redacts": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "Policy: sensitive content redacted from observation.",
+        "type": "thought"
+      },
+      {
+        "content": "[REDACTED:port] ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "an_unreachable_guard_ends_the_session": {
+    "egress": [
+      {
+        "kind": "GuardDenial",
+        "preview": "guard error (fail-closed): guard process exited",
+        "rule_label": "guard error (fail-closed): guard process exited",
+        "severity": "flag"
+      },
+      {
+        "kind": "GuardDenial",
+        "preview": "guard error (fail-closed): guard process exited",
+        "rule_label": "guard error (fail-closed): guard process exited",
+        "severity": "flag"
+      },
+      {
+        "kind": "GuardDenial",
+        "preview": "guard error (fail-closed): guard process exited",
+        "rule_label": "guard error (fail-closed): guard process exited",
+        "severity": "flag"
+      }
+    ],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "guard error (fail-closed): guard process exited",
+        "type": "guard_denial"
+      },
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "guard error (fail-closed): guard process exited",
+        "type": "guard_denial"
+      },
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "guard error (fail-closed): guard process exited",
+        "type": "guard_denial"
+      },
+      {
+        "content": "Security: Guard denied 3 consecutive actions; aborting session.",
+        "type": "thought"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 3,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: guard abort: too many consecutive denials",
+    "status": "running"
+  },
+  "guard_denials_until_the_limit": {
+    "egress": [
+      {
+        "kind": "GuardDenial",
+        "preview": "scripted denial",
+        "rule_label": "scripted denial",
+        "severity": "flag"
+      },
+      {
+        "kind": "GuardDenial",
+        "preview": "scripted denial",
+        "rule_label": "scripted denial",
+        "severity": "flag"
+      },
+      {
+        "kind": "GuardDenial",
+        "preview": "scripted denial",
+        "rule_label": "scripted denial",
+        "severity": "flag"
+      }
+    ],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "scripted denial",
+        "type": "guard_denial"
+      },
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "scripted denial",
+        "type": "guard_denial"
+      },
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "scripted denial",
+        "type": "guard_denial"
+      },
+      {
+        "content": "Security: Guard denied 3 consecutive actions; aborting session.",
+        "type": "thought"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 3,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: guard abort: too many consecutive denials",
+    "status": "running"
+  },
+  "model_errors_until_the_limit": {
+    "egress": [],
+    "events": [
+      {
+        "content": "LLM error: empty response",
+        "type": "thought"
+      },
+      {
+        "content": "LLM error: empty response",
+        "type": "thought"
+      },
+      {
+        "content": "LLM error: empty response",
+        "type": "thought"
+      },
+      {
+        "content": "LLM error: empty response",
+        "type": "thought"
+      },
+      {
+        "content": "LLM error: empty response",
+        "type": "thought"
+      },
+      {
+        "consecutive_failures": 5,
+        "reason": "5 consecutive LLM errors; aborting session.",
+        "type": "circuit_breaker"
+      }
+    ],
+    "metrics": {
+      "events_appended": 6,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": false,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: circuit breaker: too many consecutive LLM errors",
+    "status": "running"
+  },
+  "read_then_complete": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 5,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "the_dashboard_approves_a_gated_action": {
+    "egress": [],
+    "events": [
+      {
+        "action_name": "read_file",
+        "action_params_summary": "{\"path\":\"<workspace>/notes.txt\"}",
+        "gate_id": "<gate>",
+        "type": "approval_required"
+      },
+      {
+        "approved": true,
+        "gate_id": "<gate>",
+        "reason": "operator:api: the path is in scope",
+        "type": "approval_decision"
+      },
+      {
+        "content": "Approval gate '<gate>' approved (operator:api: the path is in scope).",
+        "type": "thought"
+      },
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 8,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "the_guard_denies_once": {
+    "egress": [
+      {
+        "kind": "GuardDenial",
+        "preview": "scripted denial",
+        "rule_label": "scripted denial",
+        "severity": "flag"
+      }
+    ],
+    "events": [
+      {
+        "action": "read_file",
+        "enforced": true,
+        "reason": "scripted denial",
+        "type": "guard_denial"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 1,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "the_key_rotates_every_step": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "new_public_key": "<rotated key>",
+        "rotation_index": 1,
+        "type": "key_rotation"
+      },
+      {
+        "name": "complete",
+        "params": {
+          "findings": []
+        },
+        "type": "action"
+      },
+      {
+        "content": "Audit complete. 0 finding(s): none",
+        "type": "observation"
+      },
+      {
+        "new_public_key": "<rotated key>",
+        "rotation_index": 2,
+        "type": "key_rotation"
+      },
+      {
+        "type": "verifiable_credential",
+        "vc_jwt": "<signed JWT>"
+      }
+    ],
+    "metrics": {
+      "events_appended": 7,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "the_step_limit_stops_the_session": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/other.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "ssl_protocols TLSv1.3;\n",
+        "type": "observation"
+      }
+    ],
+    "metrics": {
+      "events_appended": 4,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "ok",
+    "status": "running"
+  },
+  "the_token_budget_stops_the_session": {
+    "egress": [],
+    "events": [
+      {
+        "name": "read_file",
+        "params": {
+          "path": "<workspace>/notes.txt"
+        },
+        "type": "action"
+      },
+      {
+        "content": "listen 443 ssl;\n",
+        "type": "observation"
+      },
+      {
+        "content": "Token budget exceeded: ~<n> tokens used, limit is 1. Aborting session.",
+        "type": "thought"
+      }
+    ],
+    "metrics": {
+      "events_appended": 3,
+      "guard_denials": 0,
+      "scanner_detections": 0,
+      "snapshots_created": 0,
+      "tokens_counted": true,
+      "tripwire_rejections": 0
+    },
+    "outcome": "error: token budget exceeded: AGENT_TOKEN_BUDGET_MAX reached",
+    "status": "running"
+  }
+}

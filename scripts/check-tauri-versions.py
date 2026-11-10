@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Verify release metadata and Tauri Rust/npm dependency versions agree.
+
+WHY THIS EXISTS
+---------------
+`tauri build` refuses to run when a Tauri Rust crate and its JavaScript
+counterpart disagree on major/minor::
+
+    Found version mismatched Tauri packages. Make sure the NPM package and Rust
+    crate versions are on the same major/minor releases:
+    tauri (v2.11.5) : @tauri-apps/api (v2.10.1)
+
+The two sides drift apart silently. `cargo update` moves the Rust crates in
+``Cargo.lock``; nothing moves ``gui/package-lock.json`` with it. The semver
+ranges in ``gui/package.json`` are permissive enough to accept the new versions,
+but CI installs with ``npm ci``, which reads the lockfile verbatim and ignores
+those ranges - so the mismatch reaches the runner intact.
+
+The failure then surfaces at the *end* of a multi-OS Tauri bundle job, after
+every runner has already compiled the whole dependency tree. This script
+reproduces the same comparison in milliseconds from the two lockfiles, so the
+cheap quality gate catches it instead.
+
+USAGE
+-----
+    python3 scripts/check-tauri-versions.py
+
+Exit codes: 0 = release metadata and every pair agree.
+            1 = at least one release or dependency version mismatched.
+            2 = the script could not run (a lockfile is missing or unparseable).
+
+Dependencies: Python 3 standard library only.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CARGO_LOCK = REPO_ROOT / "Cargo.lock"
+NPM_LOCK = REPO_ROOT / "gui" / "package-lock.json"
+
+RELEASE_VERSION_SOURCES = {
+    "Rust workspace": (REPO_ROOT / "Cargo.toml", "workspace.package"),
+    "Tauri Rust package": (REPO_ROOT / "gui" / "src-tauri" / "Cargo.toml", "package"),
+    "Python SDK project": (REPO_ROOT / "sdk" / "python" / "pyproject.toml", "project"),
+    "zkVM guest crate": (REPO_ROOT / "crates" / "guest" / "Cargo.toml", "package"),
+    "guard unikernel crate": (REPO_ROOT / "crates" / "guard_unikernel" / "Cargo.toml", "package"),
+}
+
+# Rust crate -> npm package. Exactly the pairs `tauri build` compares: the core
+# crate against @tauri-apps/api, and each plugin against its own JS package.
+PAIRS = {
+    "tauri": "@tauri-apps/api",
+    "tauri-plugin-fs": "@tauri-apps/plugin-fs",
+    "tauri-plugin-dialog": "@tauri-apps/plugin-dialog",
+    "tauri-plugin-shell": "@tauri-apps/plugin-shell",
+}
+
+# `[[package]]` blocks in Cargo.lock. Parsed by regex rather than tomllib so the
+# script runs on any Python 3 the runner happens to ship.
+CARGO_PACKAGE_RE = re.compile(
+    r'\[\[package\]\]\s*\nname\s*=\s*"([^"]+)"\s*\nversion\s*=\s*"([^"]+)"',
+    re.MULTILINE,
+)
+
+
+def fail(message: str) -> None:
+    print(f"check-tauri-versions: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"cannot read {path}: {exc}")
+
+
+def toml_section_version(path: Path, section: str) -> str:
+    text = read_text(path)
+    match = re.search(
+        rf"(?ms)^\[{re.escape(section)}\]\s*(.*?)(?=^\[|\Z)", text
+    )
+    if match is None:
+        fail(f"{path} has no [{section}] section")
+    version = re.search(r'^version\s*=\s*"([^"]+)"', match.group(1), re.MULTILINE)
+    if version is None:
+        fail(f"{path} [{section}] has no literal version")
+    return version.group(1)
+
+
+def json_version(path: Path, package_root: bool = False) -> str:
+    try:
+        data = json.loads(read_text(path))
+        if package_root:
+            return data["packages"][""]["version"]
+        return data["version"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        fail(f"cannot read a version from {path}: {exc}")
+
+
+def release_versions() -> dict[str, str]:
+    versions = {
+        label: toml_section_version(path, section)
+        for label, (path, section) in RELEASE_VERSION_SOURCES.items()
+    }
+    versions.update(
+        {
+            "Tauri config": json_version(REPO_ROOT / "gui" / "src-tauri" / "tauri.conf.json"),
+            "GUI npm package": json_version(REPO_ROOT / "gui" / "package.json"),
+            "GUI npm lock": json_version(REPO_ROOT / "gui" / "package-lock.json", True),
+            "TypeScript SDK package": json_version(REPO_ROOT / "sdk" / "typescript" / "package.json"),
+            "TypeScript SDK lock": json_version(REPO_ROOT / "sdk" / "typescript" / "package-lock.json", True),
+        }
+    )
+    init_text = read_text(REPO_ROOT / "sdk" / "python" / "ironvise_sdk" / "__init__.py")
+    init_version = re.search(r'^__version__\s*=\s*"([^"]+)"', init_text, re.MULTILINE)
+    if init_version is None:
+        fail("Python SDK __init__.py has no __version__")
+    versions["Python SDK runtime"] = init_version.group(1)
+
+    # The unikernel is excluded from the workspace and only built under
+    # `sandbox-apple-enclave`, so its lockfile does not get regenerated by an
+    # ordinary `cargo build` and can sit at an old version indefinitely. It was
+    # found at 0.6.3 while its own Cargo.toml - checked above - said 0.8.0.
+    # A stale lockfile here dirties the tree on the first enclave build, which
+    # is what CI's post-build `git diff --exit-code` fails on.
+    unikernel_lock = REPO_ROOT / "crates" / "guard_unikernel" / "Cargo.lock"
+    lock_version = next(
+        (v for name, v in CARGO_PACKAGE_RE.findall(read_text(unikernel_lock))
+         if name == "guard_unikernel"),
+        None,
+    )
+    if lock_version is None:
+        fail(f"{unikernel_lock} has no guard_unikernel package entry")
+    versions["guard unikernel lock"] = lock_version
+    return versions
+
+
+def cargo_versions() -> dict[str, str]:
+    """Map crate name -> version for every package in Cargo.lock."""
+    try:
+        text = CARGO_LOCK.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"cannot read {CARGO_LOCK}: {exc}")
+    return {name: version for name, version in CARGO_PACKAGE_RE.findall(text)}
+
+
+def npm_versions() -> dict[str, str]:
+    """Map package name -> installed version from gui/package-lock.json.
+
+    Reads the lockfile's resolved tree (``packages``), not the semver ranges in
+    package.json, because ``npm ci`` installs exactly what the tree pins.
+    """
+    try:
+        data = json.loads(NPM_LOCK.read_text(encoding="utf-8"))
+    except OSError as exc:
+        fail(f"cannot read {NPM_LOCK}: {exc}")
+    except json.JSONDecodeError as exc:
+        fail(f"{NPM_LOCK} is not valid JSON: {exc}")
+
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        fail(f"{NPM_LOCK} has no 'packages' object (lockfileVersion too old?)")
+
+    versions: dict[str, str] = {}
+    for path, meta in packages.items():
+        # Keys look like "node_modules/@tauri-apps/api"; nested copies look like
+        # "node_modules/x/node_modules/@tauri-apps/api". Keep top-level only, so
+        # a transitive duplicate cannot shadow the real answer.
+        if not path.startswith("node_modules/"):
+            continue
+        name = path[len("node_modules/") :]
+        if "/node_modules/" in name:
+            continue
+        if isinstance(meta, dict) and "version" in meta:
+            versions[name] = meta["version"]
+    return versions
+
+
+def minor(version: str) -> tuple[str, str]:
+    """Return the (major, minor) pair that `tauri build` compares."""
+    parts = version.split(".")
+    if len(parts) < 2:
+        fail(f"cannot parse version {version!r}")
+    return parts[0], parts[1]
+
+
+def main() -> int:
+    releases = release_versions()
+    expected = releases["Rust workspace"]
+    release_mismatches = [
+        f"{label}: {version} (expected {expected})"
+        for label, version in releases.items()
+        if version != expected
+    ]
+    crates = cargo_versions()
+    npm = npm_versions()
+
+    mismatches: list[str] = []
+    missing: list[str] = []
+    checked = 0
+
+    for crate, package in sorted(PAIRS.items()):
+        crate_version = crates.get(crate)
+        npm_version = npm.get(package)
+
+        # A pair that is absent on both sides is simply a plugin this project
+        # does not use - not a problem. Present on only one side is.
+        if crate_version is None and npm_version is None:
+            continue
+        if crate_version is None:
+            missing.append(f"{package} v{npm_version} is installed but crate {crate} is not in Cargo.lock")
+            continue
+        if npm_version is None:
+            missing.append(f"crate {crate} v{crate_version} is in Cargo.lock but {package} is not installed")
+            continue
+
+        checked += 1
+        if minor(crate_version) != minor(npm_version):
+            mismatches.append(f"{crate} (v{crate_version}) : {package} (v{npm_version})")
+
+    if release_mismatches or missing or mismatches:
+        print("check-tauri-versions: FAILED", file=sys.stderr)
+        if release_mismatches:
+            print("\nRelease metadata is inconsistent:\n", file=sys.stderr)
+            for line in release_mismatches:
+                print(f"  {line}", file=sys.stderr)
+        if mismatches:
+            print(
+                "\nThese Tauri packages disagree on major/minor. `tauri build` "
+                "will refuse to run:\n",
+                file=sys.stderr,
+            )
+            for line in mismatches:
+                print(f"  {line}", file=sys.stderr)
+            print(
+                "\nFix by aligning the npm side with the crates, then commit both "
+                "gui/package.json and gui/package-lock.json:\n"
+                "  cd gui && npm install @tauri-apps/api@^<major.minor> ...\n",
+                file=sys.stderr,
+            )
+        for line in missing:
+            print(f"  {line}", file=sys.stderr)
+        return 1
+
+    print(
+        f"check-tauri-versions: OK - {len(releases)} release metadata sources "
+        f"agree on {expected}; {checked} Rust/npm package pair(s) agree on major.minor."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

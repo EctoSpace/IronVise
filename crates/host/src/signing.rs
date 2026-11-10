@@ -5,19 +5,26 @@
 // cryptographic audit trail of an ongoing session.
 
 use aes_gcm::{
-    Aes256Gcm, Key, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng as AeadOsRng, Payload},
+    Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit, Payload},
 };
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::Argon2;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD_NO_PAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use rand::rngs::OsRng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// The operating system's random source, which every key, salt and nonce
+/// here is drawn from.
+pub fn os_rng() -> rand::rand_core::UnwrapErr<rand::rngs::SysRng> {
+    rand::rand_core::UnwrapErr(rand::rngs::SysRng)
+}
+
 pub fn generate_keypair() -> (SigningKey, VerifyingKey) {
-    let signing_key = SigningKey::generate(&mut OsRng);
+    let signing_key = SigningKey::generate(&mut os_rng());
     let verifying_key = signing_key.verifying_key();
     (signing_key, verifying_key)
 }
@@ -76,8 +83,6 @@ pub fn verify_content_hash(
     verifying_key.verify(content_hash.as_bytes(), &sig).is_ok()
 }
 
-// ── Encrypted key file ────────────────────────────────────────────────────────
-
 /// On-disk representation of a password-encrypted Ed25519 signing key.
 #[derive(Serialize, Deserialize)]
 pub struct EncryptedKeyFile {
@@ -89,23 +94,52 @@ pub struct EncryptedKeyFile {
     pub ciphertext_hex: String,
     /// Session UUID this key belongs to.
     pub session_id: String,
+    /// HMAC-SHA256 under the derived AES key over the session id. AES-GCM is
+    /// not key-committing: without this a crafted file could decrypt under
+    /// more than one password. Empty in files written before 0.8.
+    #[serde(default)]
+    pub commitment_hex: String,
 }
 
-/// Derive a 32-byte AES key from `password` and a 16-byte `salt` using Argon2id.
-fn derive_key(password: &str, salt_str: &SaltString) -> Result<[u8; 32], SigningError> {
-    let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(password.as_bytes(), salt_str)
-        .map_err(|e| SigningError::Kdf(e.to_string()))?;
-    let hash_output = hash
-        .hash
-        .ok_or_else(|| SigningError::Kdf("no hash output".to_string()))?;
-    let bytes = hash_output.as_bytes();
-    if bytes.len() < 32 {
-        return Err(SigningError::Kdf("hash output too short".to_string()));
-    }
+fn key_commitment(aes_key: &[u8; 32], session_id: &str) -> hmac::Hmac<sha2::Sha256> {
+    use hmac::{KeyInit, Mac};
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(aes_key)
+        .expect("HMAC takes a key of any length");
+    mac.update(b"ectoledger-key-commit-v1\n");
+    mac.update(session_id.as_bytes());
+    mac
+}
+
+/// A fresh 16-byte salt, in the unpadded base64 a key file stores.
+fn new_salt() -> String {
+    let mut salt = [0u8; 16];
+    os_rng().fill_bytes(&mut salt);
+    STANDARD_NO_PAD.encode(salt)
+}
+
+/// A fresh 96-bit AES-GCM nonce.
+fn new_nonce() -> Nonce<aes_gcm::aead::consts::U12> {
+    let mut nonce = [0u8; 12];
+    os_rng().fill_bytes(&mut nonce);
+    Nonce::from(nonce)
+}
+
+/// The 32-byte AES key for `password` and a key file's `salt`: Argon2id with
+/// its default parameters (19 MiB, 2 passes, 1 lane, 32-byte output, version
+/// 0x13) over the raw bytes of the unpadded base64 salt.
+///
+/// That is what official v0.6.3 computed. Its code called
+/// `Argon2::default().hash_password` on a `SaltString` (argon2 0.5.3); the
+/// salt string decodes to those same bytes, and argon2 0.6 keeps the same
+/// defaults, so `hash_password_into` matches.
+fn derive_key(password: &str, salt: &str) -> Result<[u8; 32], SigningError> {
+    let salt = STANDARD_NO_PAD
+        .decode(salt)
+        .map_err(|_| SigningError::Kdf("the salt is not base64".to_string()))?;
     let mut key = [0u8; 32];
-    key.copy_from_slice(&bytes[..32]);
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), &salt, &mut key)
+        .map_err(|e| SigningError::Kdf(e.to_string()))?;
     Ok(key)
 }
 
@@ -113,20 +147,16 @@ fn derive_key(password: &str, salt_str: &SaltString) -> Result<[u8; 32], Signing
 ///
 /// The `session_id` is bound as Additional Authenticated Data (AAD) so that
 /// the JSON wrapper's `session_id` field cannot be swapped without failing
-/// decryption (TM-3 hardening).
+/// decryption.
 pub fn encrypt_signing_key(
     session_id: Uuid,
     key: &SigningKey,
     password: &str,
 ) -> Result<EncryptedKeyFile, SigningError> {
-    let salt = SaltString::generate(&mut OsRng);
+    let salt = new_salt();
     let aes_key_bytes = derive_key(password, &salt)?;
-    let aes_key = {
-        #[allow(deprecated)]
-        Key::<Aes256Gcm>::from_slice(&aes_key_bytes)
-    };
-    let cipher = Aes256Gcm::new(aes_key);
-    let nonce = Aes256Gcm::generate_nonce(&mut AeadOsRng);
+    let cipher = Aes256Gcm::new(&aes_key_bytes.into());
+    let nonce = new_nonce();
     let sid_str = session_id.to_string();
     let ciphertext = cipher
         .encrypt(
@@ -137,29 +167,125 @@ pub fn encrypt_signing_key(
             },
         )
         .map_err(|e| SigningError::Encrypt(e.to_string()))?;
+    let commitment = {
+        use hmac::Mac;
+        key_commitment(&aes_key_bytes, &sid_str)
+            .finalize()
+            .into_bytes()
+    };
     Ok(EncryptedKeyFile {
-        salt: salt.to_string(),
+        salt,
         nonce_hex: hex::encode(nonce),
         ciphertext_hex: hex::encode(ciphertext),
         session_id: sid_str,
+        commitment_hex: hex::encode(commitment),
     })
 }
 
-/// Decrypt an `EncryptedKeyFile` with `password` to recover the `SigningKey`.
+/// Decrypt the key of `session_id` from `enc` with `password`.
 ///
-/// The stored `session_id` is verified as GCM Additional Authenticated Data;
-/// decryption fails if the wrapper metadata has been tampered with (TM-3).
+/// The session asked for, not the one the file names, is the GCM AAD, so a
+/// file copied over another session's is refused rather than trusted.
+/// The key commitment is checked first, so a wrong password or a crafted
+/// file fails before any decryption.
 pub fn decrypt_signing_key(
     enc: &EncryptedKeyFile,
+    session_id: Uuid,
     password: &str,
 ) -> Result<SigningKey, SigningError> {
-    let salt = SaltString::from_b64(&enc.salt).map_err(|e| SigningError::Kdf(e.to_string()))?;
-    let aes_key_bytes = derive_key(password, &salt)?;
-    let aes_key = {
-        #[allow(deprecated)]
-        Key::<Aes256Gcm>::from_slice(&aes_key_bytes)
-    };
-    let cipher = Aes256Gcm::new(aes_key);
+    let sid = session_id.to_string();
+    if enc.session_id != sid {
+        return Err(SigningError::WrongSession {
+            expected: sid,
+            found: enc.session_id.clone(),
+        });
+    }
+    if enc.commitment_hex.is_empty() {
+        return Err(SigningError::UncommittedKeyFile);
+    }
+    let aes_key_bytes = derive_key(password, &enc.salt)?;
+    let commitment = hex::decode(&enc.commitment_hex).map_err(|_| SigningError::InvalidHex)?;
+    {
+        use hmac::Mac;
+        key_commitment(&aes_key_bytes, &sid)
+            .verify_slice(&commitment)
+            .map_err(|_| SigningError::Decrypt)?;
+    }
+    open_key(&aes_key_bytes, enc, sid.as_bytes())
+}
+
+/// Decrypt a key file written by official v0.6.3.
+///
+/// That release (public tag `cf7d29d`) stored `salt`, `nonce_hex`,
+/// `ciphertext_hex` and `session_id`, with no key commitment. AES-256-GCM
+/// authenticated the session id as additional data, the same way 0.8 does.
+/// A reader that authenticates an empty string instead fails every such file
+/// with [`SigningError::Decrypt`] even when the password is right.
+///
+/// Nothing else in the file binds the key to the session's registered public
+/// key, so `certificate::build_certificate` still checks that before signing.
+pub fn decrypt_legacy_signing_key(
+    enc: &EncryptedKeyFile,
+    session_id: Uuid,
+    password: &str,
+) -> Result<SigningKey, SigningError> {
+    let sid = session_id.to_string();
+    if enc.session_id != sid {
+        return Err(SigningError::WrongSession {
+            expected: sid,
+            found: enc.session_id.clone(),
+        });
+    }
+    open_key(&derive_key(password, &enc.salt)?, enc, sid.as_bytes())
+}
+
+/// After a v0.6.3 key file has decrypted, rewrite it in the 0.8 format.
+///
+/// The original bytes are kept as `session-<id>.key.v063.bak` beside the new
+/// file. An existing backup is left alone, so a second attempt cannot replace
+/// the v0.6.3 bytes with a later copy. A failure here does not undo the
+/// decrypt: the caller already holds the key.
+pub fn upgrade_legacy_key_file(
+    key_dir: &Path,
+    session_id: Uuid,
+    key: &SigningKey,
+    password: &str,
+) -> Result<(), SigningError> {
+    let path = key_file_path(key_dir, session_id);
+    let original = std::fs::read(&path).map_err(|e| SigningError::Io(e.to_string()))?;
+    let backup = key_dir.join(format!("session-{session_id}.key.v063.bak"));
+    if !backup.exists() {
+        write_private(&backup, &original)?;
+    }
+    save_session_key(key_dir, session_id, key, password)
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), SigningError> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| SigningError::Io(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| SigningError::Io(e.to_string()))?;
+    }
+    #[cfg(windows)]
+    restrict_to_owner(path).map_err(SigningError::Io)?;
+    file.write_all(bytes)
+        .map_err(|e| SigningError::Io(e.to_string()))?;
+    file.sync_all().map_err(|e| SigningError::Io(e.to_string()))
+}
+
+fn open_key(
+    aes_key_bytes: &[u8; 32],
+    enc: &EncryptedKeyFile,
+    aad: &[u8],
+) -> Result<SigningKey, SigningError> {
+    let cipher = Aes256Gcm::new(&(*aes_key_bytes).into());
     let nonce_bytes = hex::decode(&enc.nonce_hex).map_err(|_| SigningError::InvalidHex)?;
     let nonce_arr: [u8; 12] = nonce_bytes
         .as_slice()
@@ -172,7 +298,7 @@ pub fn decrypt_signing_key(
             &nonce,
             Payload {
                 msg: ct_bytes.as_ref(),
-                aad: enc.session_id.as_bytes(),
+                aad,
             },
         )
         .map_err(|_| SigningError::Decrypt)?;
@@ -181,13 +307,78 @@ pub fn decrypt_signing_key(
 }
 
 fn key_file_path(key_dir: &Path, session_id: Uuid) -> PathBuf {
-    key_dir.join(format!("session-{}.key", session_id))
+    key_dir.join(format!("session-{session_id}.key"))
+}
+
+/// The encrypted key file `audit` saved for this session, if there is one.
+pub fn read_key_file(
+    key_dir: &Path,
+    session_id: Uuid,
+) -> Result<Option<EncryptedKeyFile>, SigningError> {
+    let path = key_file_path(key_dir, session_id);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let json = std::fs::read_to_string(&path).map_err(|e| SigningError::Io(e.to_string()))?;
+    serde_json::from_str(&json)
+        .map(Some)
+        .map_err(|e| SigningError::Io(e.to_string()))
+}
+
+/// Restrict a key file to the current user with `icacls`: inheritance removed,
+/// then Full access for `%USERNAME%` alone. Fatal on any failure, including
+/// icacls running and refusing, since a key file left readable by others is
+/// worse than no key file.
+#[cfg(windows)]
+pub(crate) fn restrict_to_owner(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    let user = std::env::var("USERNAME").map_err(|_| {
+        "SECURITY: USERNAME is not set; cannot restrict the key file's ACL".to_string()
+    })?;
+    let grant = format!("{user}:F");
+    for args in [
+        vec![path_str.as_ref(), "/inheritance:r"],
+        vec![path_str.as_ref(), "/grant:r", grant.as_str()],
+    ] {
+        let out = std::process::Command::new("icacls")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("SECURITY: could not run icacls on {path_str}: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "SECURITY: icacls {} failed on {path_str}: {}. Refusing to leave the key file with a permissive ACL.",
+                args[1..].join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rename `from` over `to`. Windows can refuse a replacing rename with
+/// "Access is denied" while another rename of the same target is in progress,
+/// so it is retried briefly there.
+fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut attempt = 0;
+    loop {
+        match std::fs::rename(from, to) {
+            Err(e)
+                if cfg!(windows)
+                    && e.kind() == std::io::ErrorKind::PermissionDenied
+                    && attempt < 50 =>
+            {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
 }
 
 /// Persist a `SigningKey` to disk encrypted with `password`.
 ///
 /// The password must be at least `MIN_PASSWORD_LEN` characters long
-/// (TM-3c hardening). Short passwords are rejected with `SigningError::PasswordTooShort`.
+///. Short passwords are rejected with `SigningError::PasswordTooShort`.
 pub fn save_session_key(
     key_dir: &Path,
     session_id: Uuid,
@@ -201,9 +392,20 @@ pub fn save_session_key(
     let enc = encrypt_signing_key(session_id, key, password)?;
     let json = serde_json::to_string_pretty(&enc).map_err(|e| SigningError::Io(e.to_string()))?;
     let path = key_file_path(key_dir, session_id);
-    {
+    // Write a private temporary file and rename it over the key file, so a
+    // reader never sees a half-written key and two saves of the same session
+    // cannot interleave. On Windows the temporary file matters for a second
+    // reason: restrict_to_owner runs icacls twice, and between the two calls
+    // the file has an empty ACL, so a concurrent save that opened the shared
+    // path in that window failed with "Access is denied".
+    let tmp = key_dir.join(format!(".session-{session_id}.{}.tmp", Uuid::new_v4()));
+    let written = (|| {
         use std::io::Write;
-        let mut file = std::fs::File::create(&path).map_err(|e| SigningError::Io(e.to_string()))?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| SigningError::Io(e.to_string()))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -211,115 +413,69 @@ pub fn save_session_key(
                 .map_err(|e| SigningError::Io(e.to_string()))?;
         }
         #[cfg(windows)]
-        {
-            // Restrict the key file to the current user only via icacls.
-            // Disable inheritance, then grant Full access exclusively to %USERNAME%.
-            // These operations are FATAL — leaving a key file world-readable is
-            // a critical security violation (TM-3b hardening).
-            let path_str = path.to_string_lossy();
-            std::process::Command::new("icacls")
-                .args([path_str.as_ref(), "/inheritance:r"])
-                .output()
-                .map_err(|e| {
-                    SigningError::Io(format!(
-                        "SECURITY: failed to remove inheritance on signing key file {}: {}. \
-                         Refusing to leave key file with permissive ACL.",
-                        path_str, e
-                    ))
-                })?;
-            let user = std::env::var("USERNAME").map_err(|_| {
-                SigningError::Io(
-                    "SECURITY: USERNAME env var not set; cannot restrict key file ACL".into(),
-                )
-            })?;
-            std::process::Command::new("icacls")
-                .args([path_str.as_ref(), "/grant:r", &format!("{user}:F")])
-                .output()
-                .map_err(|e| {
-                    SigningError::Io(format!(
-                        "SECURITY: failed to restrict signing key file {} to user {}: {}. \
-                         Refusing to leave key file with permissive ACL.",
-                        path_str, user, e
-                    ))
-                })?;
-        }
+        restrict_to_owner(&tmp).map_err(SigningError::Io)?;
         file.write_all(json.as_bytes())
             .map_err(|e| SigningError::Io(e.to_string()))?;
+        file.sync_all()
+            .map_err(|e| SigningError::Io(e.to_string()))?;
+        drop(file);
+        replace_file(&tmp, &path).map_err(|e| SigningError::Io(e.to_string()))
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
+    written?;
     Ok(())
-}
-
-/// Load and decrypt a `SigningKey` from disk using `password`.
-/// Returns `SigningError::KeyFileNotFound` if the file does not exist (new session).
-pub fn load_session_key(
-    key_dir: &Path,
-    session_id: Uuid,
-    password: &str,
-) -> Result<SigningKey, SigningError> {
-    let path = key_file_path(key_dir, session_id);
-    if !path.exists() {
-        return Err(SigningError::KeyFileNotFound);
-    }
-    let json = std::fs::read_to_string(&path).map_err(|e| SigningError::Io(e.to_string()))?;
-    let enc: EncryptedKeyFile =
-        serde_json::from_str(&json).map_err(|e| SigningError::Io(e.to_string()))?;
-    decrypt_signing_key(&enc, password)
 }
 
 /// Prompt the user for a key-protection password, or read it from
 /// `ECTO_KEY_PASSWORD`. Returns `None` if the user enters an empty string
 /// (key persistence is skipped) or if stdin is not a terminal.
 ///
-/// **`ECTO_KEY_PASSWORD` is deprecated (TM-3c).** It remains functional for
+/// **`ECTO_KEY_PASSWORD` is deprecated.** It remains functional for
 /// non-interactive CI pipelines, but a loud deprecation warning is emitted.
 /// Prefer `--key-password-fd` (reading from a file descriptor) in production.
 pub fn prompt_or_env_password(prompt_msg: &str) -> Option<String> {
-    if let Ok(pw) = std::env::var("ECTO_KEY_PASSWORD") {
-        if !pw.is_empty() {
-            // Emit a loud, unmissable deprecation + security warning.
-            eprintln!("╔══════════════════════════════════════════════════════════════╗");
-            eprintln!("║  DEPRECATED: ECTO_KEY_PASSWORD is set via env var           ║");
-            eprintln!("║  This is INSECURE: the password is visible in process        ║");
-            eprintln!("║  listings (/proc/self/environ, `ps auxe`, docker inspect).   ║");
-            eprintln!("║  Use --key-password-fd or the interactive prompt instead.    ║");
-            eprintln!("║  ECTO_KEY_PASSWORD will be REMOVED in a future release.      ║");
-            eprintln!("╚══════════════════════════════════════════════════════════════╝");
-            return Some(pw);
-        }
+    use std::io::IsTerminal;
+    if let Some(from_env) = env_password(std::env::var("ECTO_KEY_PASSWORD").ok()) {
+        return from_env;
+    }
+    // rpassword reads the console itself (/dev/tty, or CONIN$ on Windows), not
+    // stdin, so a scripted run with stdin redirected would still wait for a
+    // keypress that never comes.
+    if !std::io::stdin().is_terminal() {
         return None;
     }
-    match rpassword::prompt_password(prompt_msg) {
+    entered(rpassword::prompt_password(prompt_msg))
+}
+
+/// What `ECTO_KEY_PASSWORD` decides: `None` when it is unset (ask the user),
+/// `Some(None)` when it is set but empty (no key file, and no prompt), and
+/// `Some(Some(pw))` when it holds a password, with the deprecation warning.
+fn env_password(value: Option<String>) -> Option<Option<String>> {
+    let pw = value?;
+    if pw.is_empty() {
+        return Some(None);
+    }
+    eprintln!("╔══════════════════════════════════════════════════════════════╗");
+    eprintln!("║  DEPRECATED: ECTO_KEY_PASSWORD is set via env var            ║");
+    eprintln!("║  This is INSECURE: the password is visible in process        ║");
+    eprintln!("║  listings (/proc/self/environ, `ps auxe`, docker inspect).   ║");
+    eprintln!("║  Use --key-password-fd or the interactive prompt instead.    ║");
+    eprintln!("║  It still works; no release that removes it is planned.      ║");
+    eprintln!("╚══════════════════════════════════════════════════════════════╝");
+    Some(Some(pw))
+}
+
+/// A prompt's answer: a blank line, or no terminal to ask on, skips the key.
+fn entered(answer: std::io::Result<String>) -> Option<String> {
+    match answer {
         Ok(pw) if !pw.is_empty() => Some(pw),
         _ => None,
     }
 }
 
-/// Prompt the user to re-enter the password to unlock an existing session key.
-pub fn prompt_or_env_password_for_resume(session_id: Uuid) -> Option<String> {
-    let prompt = format!(
-        "Enter password to unlock signing key for session {} (leave blank to skip): ",
-        session_id
-    );
-    if let Ok(pw) = std::env::var("ECTO_KEY_PASSWORD") {
-        if !pw.is_empty() {
-            eprintln!("╔══════════════════════════════════════════════════════════════╗");
-            eprintln!("║  DEPRECATED: ECTO_KEY_PASSWORD is set via env var           ║");
-            eprintln!("║  This is INSECURE: the password is visible in process        ║");
-            eprintln!("║  listings (/proc/self/environ, `ps auxe`, docker inspect).   ║");
-            eprintln!("║  Use --key-password-fd or the interactive prompt instead.    ║");
-            eprintln!("║  ECTO_KEY_PASSWORD will be REMOVED in a future release.      ║");
-            eprintln!("╚══════════════════════════════════════════════════════════════╝");
-            return Some(pw);
-        }
-        return None;
-    }
-    match rpassword::prompt_password(&prompt) {
-        Ok(pw) if !pw.is_empty() => Some(pw),
-        _ => None,
-    }
-}
-
-/// Read a password from file descriptor `fd` (TM-3c hardening).
+/// Read a password from file descriptor `fd`.
 ///
 /// This avoids placing the password in environment variables or command-line
 /// arguments, both of which are visible via `/proc` and `ps`. Typical usage:
@@ -345,7 +501,7 @@ pub fn read_password_from_fd(fd: i32) -> Option<String> {
                 if s.is_empty() { None } else { Some(s) }
             }
             Err(e) => {
-                eprintln!("Failed to read password from fd {}: {}", fd, e);
+                eprintln!("Failed to read password from fd {fd}: {e}");
                 None
             }
         }
@@ -357,76 +513,6 @@ pub fn read_password_from_fd(fd: i32) -> Option<String> {
         None
     }
 }
-
-// ── Signed checkpoint (TM-1c) ─────────────────────────────────────────────────
-
-/// A signed checkpoint captures the chain tip hash at a point in time,
-/// allowing offline verification of ledger integrity without replaying
-/// the full chain.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct SignedCheckpoint {
-    /// ISO-8601 timestamp of when the checkpoint was created.
-    pub created_at: String,
-    /// Latest sequence number in the chain.
-    pub sequence: i64,
-    /// SHA-256 content hash of the latest event (the chain tip).
-    pub chain_tip_hash: String,
-    /// Hex-encoded Ed25519 signature over `"{sequence}:{chain_tip_hash}"`.
-    pub signature: String,
-    /// Hex-encoded Ed25519 public key for verification.
-    pub public_key: String,
-}
-
-impl SignedCheckpoint {
-    /// Create and sign a checkpoint for the given chain tip.
-    pub fn create(sequence: i64, chain_tip_hash: &str, signing_key: &SigningKey) -> Self {
-        let msg = format!("{}:{}", sequence, chain_tip_hash);
-        let sig = signing_key.sign(msg.as_bytes());
-        Self {
-            created_at: chrono::Utc::now().to_rfc3339(),
-            sequence,
-            chain_tip_hash: chain_tip_hash.to_string(),
-            signature: hex::encode(sig.to_bytes()),
-            public_key: hex::encode(signing_key.verifying_key().to_bytes()),
-        }
-    }
-
-    /// Verify this checkpoint's Ed25519 signature.
-    pub fn verify(&self) -> Result<(), SigningError> {
-        let pk_bytes = hex::decode(&self.public_key).map_err(|_| SigningError::InvalidHex)?;
-        let pk_arr: [u8; 32] = pk_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| SigningError::InvalidKey)?;
-        let verifying_key =
-            VerifyingKey::from_bytes(&pk_arr).map_err(|_| SigningError::InvalidKey)?;
-        let sig_bytes = hex::decode(&self.signature).map_err(|_| SigningError::InvalidHex)?;
-        let sig_arr: [u8; 64] = sig_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| SigningError::InvalidSignature)?;
-        let signature = ed25519_dalek::Signature::from_bytes(&sig_arr);
-        let msg = format!("{}:{}", self.sequence, self.chain_tip_hash);
-        verifying_key
-            .verify_strict(msg.as_bytes(), &signature)
-            .map_err(|_| SigningError::VerificationFailed)
-    }
-
-    /// Save the checkpoint to a JSON file.
-    pub fn save(&self, path: &Path) -> Result<(), SigningError> {
-        let json =
-            serde_json::to_string_pretty(self).map_err(|e| SigningError::Io(e.to_string()))?;
-        std::fs::write(path, json).map_err(|e| SigningError::Io(e.to_string()))
-    }
-
-    /// Load a checkpoint from a JSON file.
-    pub fn load(path: &Path) -> Result<Self, SigningError> {
-        let json = std::fs::read_to_string(path).map_err(|e| SigningError::Io(e.to_string()))?;
-        serde_json::from_str(&json).map_err(|e| SigningError::Io(e.to_string()))
-    }
-}
-
-// ── Error type ────────────────────────────────────────────────────────────────
 
 /// Try to load the Ed25519 `VerifyingKey` for a session from its stored
 /// `session_public_key` hex string in the database.  Returns `None` if the
@@ -468,9 +554,88 @@ pub enum SigningError {
     Decrypt,
     #[error("key file I/O error: {0}")]
     Io(String),
-    #[error("key file not found (new session or key_dir not set)")]
-    KeyFileNotFound,
+    #[error("key file belongs to session {found}, not {expected}")]
+    WrongSession { expected: String, found: String },
+    #[error("key file has no key commitment (written before 0.8): save the key again")]
+    UncommittedKeyFile,
 }
 
-/// Minimum password length for key encryption (TM-3c hardening).
+/// Minimum password length for key encryption.
 pub const MIN_PASSWORD_LEN: usize = 12;
+
+/// Encrypt exactly as official v0.6.3 (`cf7d29d`) did: Argon2id defaults over
+/// the salt bytes, AES-256-GCM with the session id as additional data, and no
+/// commitment field. The salt and nonce are arguments so a fixture can be
+/// reproduced byte for byte.
+#[cfg(test)]
+pub(crate) fn encrypt_v063_key(
+    session_id: Uuid,
+    key: &SigningKey,
+    password: &str,
+    salt: &str,
+    nonce_bytes: &[u8; 12],
+) -> EncryptedKeyFile {
+    let aes_key_bytes = derive_key(password, salt).expect("v0.6.3 kdf");
+    let cipher = Aes256Gcm::new(&aes_key_bytes.into());
+    let nonce = Nonce::from(*nonce_bytes);
+    let sid = session_id.to_string();
+    let ciphertext = cipher
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: key.as_bytes().as_ref(),
+                aad: sid.as_bytes(),
+            },
+        )
+        .expect("v0.6.3 encrypt");
+    EncryptedKeyFile {
+        salt: salt.to_string(),
+        nonce_hex: hex::encode(nonce_bytes),
+        ciphertext_hex: hex::encode(ciphertext),
+        session_id: sid,
+        commitment_hex: String::new(),
+    }
+}
+
+/// Write a key file the way official v0.6.3 did: session id as AES-GCM
+/// additional data, and no key commitment.
+#[cfg(test)]
+pub(crate) fn save_legacy_key_file(
+    key_dir: &Path,
+    session_id: Uuid,
+    key: &SigningKey,
+    password: &str,
+) -> PathBuf {
+    let salt = new_salt();
+    let nonce = new_nonce();
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes.copy_from_slice(&nonce);
+    let file = encrypt_v063_key(session_id, key, password, &salt, &nonce_bytes);
+    let file = serde_json::json!({
+        "salt": file.salt,
+        "nonce_hex": file.nonce_hex,
+        "ciphertext_hex": file.ciphertext_hex,
+        "session_id": file.session_id,
+    });
+    std::fs::create_dir_all(key_dir).unwrap();
+    let path = key_file_path(key_dir, session_id);
+    std::fs::write(&path, file.to_string()).unwrap();
+    path
+}
+
+/// Official v0.6.3 key-file fixture. Password, secret and session are fixed so
+/// the committed JSON can be decrypted without regenerating it.
+#[cfg(test)]
+pub(crate) const V063_PASSWORD: &str = "upgrade-check-password";
+#[cfg(test)]
+pub(crate) const V063_SECRET: &str =
+    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+#[cfg(test)]
+pub(crate) const V063_SESSION: &str = "6f3c1a20-9b4e-4d17-8c2a-5e7f0b1d3a64";
+#[cfg(test)]
+pub(crate) const V063_KEY_FILE: &str = include_str!("signing/known_answer_key_file_v063.json");
+
+#[cfg(test)]
+mod key_file_tests;
+#[cfg(test)]
+mod known_answer_tests;

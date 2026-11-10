@@ -1,0 +1,97 @@
+name: Checks
+
+# Checks run only when manually dispatched.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual run"
+        required: false
+
+permissions:
+  contents: read
+
+# A new dispatch on the same ref replaces the previous run.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
+
+jobs:
+  check:
+    name: fmt + clippy + test (ubuntu)
+    # Automatic runs only on the public repo; manual dispatch works anywhere.
+    if: github.repository == 'EctoSpace/EctoLedger' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      # Runs first, before any toolchain setup: if a workflow job ever loses
+      # its repository guard, fail immediately rather than after a 20-minute build.
+      - name: Verify workflow repository guards
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check-workflow-guards.py
+
+      # Also cheap, also runs before any toolchain setup. Release metadata and
+      # Tauri dependency drift otherwise surface late (or in published assets).
+      - name: Verify release and Tauri version parity
+        run: python3 scripts/check-tauri-versions.py
+
+      # Same idea: a one-character edit of a shipped migration fails every
+      # existing ledger at startup. Catch it before the toolchain install.
+      - name: Verify applied migration checksums
+        run: python3 scripts/check-migration-checksums.py
+
+      # Preinstalled toolchains this job never uses: about 20 GB back.
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-ubuntu"
+
+      # gui/src-tauri is a workspace member, so clippy/test compile it and
+      # need the webkit2gtk toolchain even though the GUI is not bundled here.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libssl-dev libgtk-3-dev
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      # `cargo test --workspace` compiles serde_json with preserve_order (the
+      # GUI's dependencies turn it on); a certificate's canonical signing bytes
+      # must not depend on that, so the verifier also runs without it.
+      - name: Certificate verifier, both serde_json configurations
+        run: make test-elc
+
+      # site/verify.html runs the WebAssembly module embedded in
+      # site/verify-bundle.js: the committed bytes are what visitors run, so
+      # those are what is checked, for currency and for agreement.
+      - name: Browser verifier agrees with verify-cert
+        run: make test-wasm-verifier
+
+      - name: Demo (hook denial, end to end)
+        run: |
+          sudo apt-get install -y --no-install-recommends sqlite3
+          make demo-hook

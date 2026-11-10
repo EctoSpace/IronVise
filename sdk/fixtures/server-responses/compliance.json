@@ -1,0 +1,18 @@
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event_count": 3,
+  "events": [
+    {
+      "sequence": 0,
+      "content_hash": "13b77bdc3ad7c747fdf210ea105315ea129153f8e0486a5648e866309101642f"
+    },
+    {
+      "sequence": 1,
+      "content_hash": "6050fd586ee4d82a5052df2208167c014b0b88af3a28b7a5a9f5c72dbfa28646"
+    },
+    {
+      "sequence": 2,
+      "content_hash": "e5d0ef9440fc258a6f6f9b410555854e1255d38ac5488f7c988b02532a1e987b"
+    }
+  ]
+}

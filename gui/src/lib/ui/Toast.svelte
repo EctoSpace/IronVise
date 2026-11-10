@@ -1,5 +1,5 @@
 <!--
-  Toast — ephemeral notification component.
+  Toast - ephemeral notification component.
   Usage: bind a `messages: ToastMessage[]` array; push to show, auto-removes after timeout.
 -->
 <script lang="ts" module>

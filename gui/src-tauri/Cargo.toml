@@ -1,11 +1,12 @@
 [package]
-name    = "ectoledger-gui"
-version = "0.6.3"
+name    = "ironvise-gui"
+version = "0.8.0"
 edition = "2024"
-license = "Apache-2.0"
+# Part of the Licensed Work under ./LICENSE (BUSL-1.1), like the crates.
+license = "BUSL-1.1"
 
 [[bin]]
-name = "ectoledger-gui"
+name = "ironvise-gui"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -21,17 +22,23 @@ url            = "2"
 urlencoding    = "2"
 tokio          = { version = "1", features = ["rt-multi-thread", "macros"] }
 tracing        = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
 # Embedded server dependencies
 ectoledger = { path = "../../crates/host", default-features = false }
 axum           = "0.8"
-sha2           = "0.10"
+sha2           = "0.11"
 hex            = "0.4"
-rand           = "0.9"
-dirs           = "6"
+rand           = "0.10"
+dirs           = "7"
 chrono         = { version = "0.4", features = ["serde"] }
 tokio-util     = { version = "0.7", features = ["rt"] }
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 
+[dev-dependencies]
+# IPC contract tests: commands invoked through the real Tauri IPC path.
+tauri = { version = "2", features = ["test"] }
+# Mock-HTTP-server command tests: serialised so they don't race on ECTO_HOST
+# (already a dev-dependency of crates/host for the same reason).
+serial_test = "4"

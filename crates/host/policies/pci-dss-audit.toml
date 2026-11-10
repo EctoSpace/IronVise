@@ -10,9 +10,10 @@ name    = "PCI-DSS Compliance Audit"
 goal    = "Audit the cardholder data environment for PCI-DSS v4.0.1 compliance: network segmentation, access controls, encryption, logging, script integrity, and vulnerability management."
 max_steps = 50
 
-allowed_actions   = ["run_command", "read_file", "http_get", "complete"]
 forbidden_actions = ["write_file", "delete_file"]
 
+# Controls the audit is expected to cover. Kept with the policy; the engine
+# does not enforce them in 0.8.
 required_checks = [
     "Firewall rules restrict inbound CDE access to necessary ports only",
     "No default vendor passwords present in critical services",
@@ -27,48 +28,110 @@ required_checks = [
 # Command rules
 # ---------------------------------------------------------------------------
 
-[[command_rules]]
-description = "Allow standard system inspection"
-pattern     = "^(ls|cat|stat|find|grep|awk|head|tail|id|whoami|uname|ps|ss|netstat|ip|openssl|nmap|nikto|curl|systemctl|journalctl|iptables|ufw|firewall-cmd)\\b"
-action      = "allow"
+# Actions the agent may take. run_command is limited to these programs; the
+# Windows equivalents (dir, type, findstr, ...) follow the Unix names, and a
+# name the host does not allow (see executor.rs) never runs there.
+# (allow standard system inspection).
+[[allowed_actions]]
+action = "run_command"
+allowed_commands = ["ls", "cat", "stat", "find", "grep", "awk", "head", "tail", "id", "whoami", "uname", "ps", "ss", "netstat", "ip", "openssl", "nmap", "nikto", "curl", "systemctl", "journalctl", "iptables", "ufw", "firewall-cmd", "dir", "type", "findstr", "where", "hostname", "tasklist", "systeminfo", "icacls", "attrib", "ver"]
+
+[[allowed_actions]]
+action = "read_file"
+
+[[allowed_actions]]
+action = "http_get"
+
+[[allowed_actions]]
+action = "complete"
 
 [[command_rules]]
-description = "Block live exploitation tools"
-pattern     = "metasploit|msfconsole|sqlmap|hydra|medusa|john|hashcat"
-action      = "deny"
+program = "metasploit"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
 
 [[command_rules]]
-description = "Block destructive operations"
-pattern     = "\\brm\\s+-rf\\b|\\bdd\\b|\\bshred\\b"
-action      = "deny"
+program = "msfconsole"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "sqlmap"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "hydra"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "medusa"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "john"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "hashcat"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block live exploitation tools"
+
+[[command_rules]]
+program = "rm"
+arg_pattern = "^-rf"
+decision = "deny"
+reason = "Block destructive operations"
+
+[[command_rules]]
+program = "dd"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block destructive operations"
+
+[[command_rules]]
+program = "shred"
+arg_pattern = ".*"
+decision = "deny"
+reason = "Block destructive operations"
 
 # ---------------------------------------------------------------------------
 # Observation rules
 # ---------------------------------------------------------------------------
 
+# Redact PANs - primary account numbers (credit card numbers)
 [[observation_rules]]
-description = "Redact PANs — primary account numbers (credit card numbers)"
-pattern     = "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b"
-action      = "redact"
-sensitivity = "high"
+pattern = "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b"
+action = "redact"
+label = "pans_primary_account"
 
+# Redact private key material
 [[observation_rules]]
-description = "Redact private key material"
-pattern     = "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
-action      = "redact"
-sensitivity = "high"
+pattern = "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+action = "redact"
+label = "private_key_material"
 
+# Flag weak TLS or SSL versions in output
 [[observation_rules]]
-description = "Flag weak TLS or SSL versions in output"
-pattern     = "(?i)(SSLv2|SSLv3|TLSv1\\.0|TLSv1\\.1)"
-action      = "flag"
-sensitivity = "medium"
+pattern = "(?i)(SSLv2|SSLv3|TLSv1\\.0|TLSv1\\.1)"
+action = "flag"
+label = "weak_tls_ssl"
 
+# Redact passwords in configuration output
 [[observation_rules]]
-description = "Redact passwords in configuration output"
-pattern     = "(?i)password\\s*[=:]\\s*\\S+"
-action      = "redact"
-sensitivity = "high"
+pattern = "(?i)password\\s*[=:]\\s*\\S+"
+action = "redact"
+label = "passwords_configuration"
 
 # ---------------------------------------------------------------------------
 # Approval gates

@@ -1,5 +1,5 @@
 <!--
-  CodeBlock — scrollable <pre> with line numbers and an integrated CopyButton.
+  CodeBlock - scrollable <pre> with line numbers and an integrated CopyButton.
   Suitable for showing SDK snippets, shell commands, or terminal output.
 -->
 <script lang="ts">

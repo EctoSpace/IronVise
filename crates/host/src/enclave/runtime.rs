@@ -1,26 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// Confidentiality tier for the enclave.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EnclaveLevel {
-    /// Level 1 – mlock'd host memory, zeroized on drop.
-    SoftwareHardened,
-    /// Level 2 – Apple Hypervisor Framework (aarch64 bare-metal unikernel).
-    AppleHypervisor,
-    /// Level 3 – Remote hardware enclave (AWS Nitro / AMD SEV-SNP).
-    RemoteHardwareEnclave,
-}
-
-impl std::fmt::Display for EnclaveLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::SoftwareHardened => write!(f, "software_hardened"),
-            Self::AppleHypervisor => write!(f, "apple_hypervisor"),
-            Self::RemoteHardwareEnclave => write!(f, "remote_hardware_enclave"),
-        }
-    }
-}
+/// Confidentiality tier for the enclave. Defined in `ectoledger-elc`, because
+/// the certificate records it and the certificate crate has to build for the
+/// browser verifier without this one.
+pub use ectoledger_elc::EnclaveLevel;
 
 /// Attestation evidence produced by an enclave after initialization or execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,30 +1,24 @@
-//! SQLCipher at-rest encryption support (TM-1d).
+//! SQLCipher at-rest encryption for the SQLite ledger.
 //!
-//! When the `sqlcipher` feature is enabled, the SQLite database file is
-//! encrypted transparently using AES-256-CBC with an HMAC-SHA512 MAC via
-//! the SQLCipher extension.
+//! `--features sqlcipher` builds SQLCipher in place of SQLite
+//! (`libsqlite3-sys/bundled-sqlcipher`, which links the system libcrypto) and
+//! requires `ECTOLEDGER_SQLCIPHER_KEY` (at least 16 characters).
 //!
-//! # Requirements
-//!
-//! - The `sqlcipher` feature must be enabled: `cargo build --features sqlcipher`
-//! - The `ECTOLEDGER_SQLCIPHER_KEY` environment variable must be set to the
-//!   database encryption passphrase (at least 16 characters).
-//! - The system must have a SQLCipher-enabled SQLite library installed.
-//!
-//! # Security considerations
-//!
-//! SQLCipher encrypts the database at rest, preventing an attacker who gains
-//! access to the filesystem from reading or modifying ledger events without
-//! the encryption key. This is defense-in-depth alongside the immutability
-//! triggers and chain verification.
-//!
-//! # Cross-platform
-//!
-//! SQLCipher is available on Windows, macOS, and Linux. The key is read from
-//! the environment or a file descriptor for CI/CD pipelines.
+//! The key is read once, moved into zeroize-on-drop memory and removed from
+//! the environment, so child processes (guard worker, audited commands) never
+//! inherit it. It is set as the first pragma of every connection a pool opens,
+//! read-only pools included: a pool opens connections lazily, and one keyed
+//! connection says nothing about the next.
+
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+use std::sync::OnceLock;
+
+use crate::secrets::{SecretString, load_env_secret};
 
 /// Minimum passphrase length for SQLCipher encryption.
 pub const MIN_SQLCIPHER_KEY_LEN: usize = 16;
+
+const KEY_ENV: &str = "ECTOLEDGER_SQLCIPHER_KEY";
 
 /// Error type for SQLCipher operations.
 #[derive(Debug, thiserror::Error)]
@@ -35,48 +29,64 @@ pub enum SqlCipherError {
     KeyTooShort,
     #[error("SQLCipher PRAGMA failed: {0}")]
     Pragma(String),
+    #[error(
+        "the `sqlcipher` feature is built in, but this SQLite library is not \
+         SQLCipher-enabled (`PRAGMA cipher_version` returned nothing). The \
+         ledger would be written in plaintext."
+    )]
+    NotSqlCipher,
 }
 
-/// Read the SQLCipher encryption key from the environment.
-///
-/// Returns `None` if the `sqlcipher` feature is not enabled at compile time.
-/// Returns `Err` if the feature is enabled but the key is missing or too short.
-#[cfg(feature = "sqlcipher")]
-pub fn read_sqlcipher_key() -> Result<String, SqlCipherError> {
-    let key = std::env::var("ECTOLEDGER_SQLCIPHER_KEY").map_err(|_| SqlCipherError::KeyNotSet)?;
+fn check_key(key: &str) -> Result<(), SqlCipherError> {
     if key.is_empty() {
         return Err(SqlCipherError::KeyNotSet);
     }
     if key.len() < MIN_SQLCIPHER_KEY_LEN {
         return Err(SqlCipherError::KeyTooShort);
     }
+    Ok(())
+}
+
+static KEY: OnceLock<Option<SecretString>> = OnceLock::new();
+
+/// The key from `ECTOLEDGER_SQLCIPHER_KEY`. The first call moves it out of the
+/// environment; later calls (a second pool, a read-only pool) get the same one.
+pub fn read_sqlcipher_key() -> Result<&'static SecretString, SqlCipherError> {
+    let key = KEY
+        .get_or_init(|| load_env_secret(KEY_ENV))
+        .as_ref()
+        .ok_or(SqlCipherError::KeyNotSet)?;
+    check_key(key.expose_secret())?;
     Ok(key)
 }
 
-/// Apply the SQLCipher key to a SQLite connection by issuing `PRAGMA key`.
-///
-/// Must be called immediately after opening the connection, before any
-/// other database operations. This function assumes the underlying SQLite
-/// library is SQLCipher-enabled; with stock SQLite the PRAGMA is silently
-/// ignored.
-#[cfg(feature = "sqlcipher")]
-pub async fn apply_sqlcipher_key(pool: &sqlx::SqlitePool, key: &str) -> Result<(), SqlCipherError> {
-    // SQLCipher requires the key to be set as the first operation.
-    // Use the x'...' hex form to avoid SQL injection issues.
-    let hex_key = hex::encode(key.as_bytes());
-    let pragma = format!("PRAGMA key = \"x'{}'\";", hex_key);
-    sqlx::query(&pragma)
-        .execute(pool)
-        .await
-        .map_err(|e| SqlCipherError::Pragma(e.to_string()))?;
+/// `opts` with the key as the first pragma of every connection. The `x'…'`
+/// hex form keeps the passphrase out of SQL quoting.
+pub fn keyed(opts: SqliteConnectOptions, key: &SecretString) -> SqliteConnectOptions {
+    opts.pragma(
+        "key",
+        format!("\"x'{}'\"", hex::encode(key.expose_secret().as_bytes())),
+    )
+}
 
-    // Verify the key is correct by attempting a read.
+/// Refuse to continue unless the pool really is SQLCipher and the key opens
+/// the file. Stock SQLite ignores an unknown `PRAGMA key`, so without this the
+/// sequence "ask for encryption, be silently refused, write a plaintext
+/// ledger" would look like success.
+pub async fn check_pool(pool: &SqlitePool) -> Result<(), SqlCipherError> {
+    let version: Option<String> = sqlx::query_scalar("PRAGMA cipher_version;")
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| SqlCipherError::Pragma(e.to_string()))?
+        .flatten();
+    let Some(version) = version.filter(|v| !v.trim().is_empty()) else {
+        return Err(SqlCipherError::NotSqlCipher);
+    };
     sqlx::query("SELECT count(*) FROM sqlite_master;")
         .execute(pool)
         .await
-        .map_err(|e| SqlCipherError::Pragma(format!("Key verification failed: {}", e)))?;
-
-    tracing::info!("SQLCipher encryption enabled for SQLite database.");
+        .map_err(|e| SqlCipherError::Pragma(format!("Key verification failed: {e}")))?;
+    tracing::info!("SQLCipher {version} encryption enabled for the SQLite ledger.");
     Ok(())
 }
 
@@ -85,31 +95,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn min_key_length_enforced() {
-        // This test is cross-platform (no OS-specific logic).
-        assert_eq!(MIN_SQLCIPHER_KEY_LEN, 16);
-    }
-
-    #[cfg(feature = "sqlcipher")]
-    #[test]
-    fn short_key_rejected() {
-        unsafe { std::env::set_var("ECTOLEDGER_SQLCIPHER_KEY", "short") };
-        let result = read_sqlcipher_key();
-        assert!(matches!(result, Err(SqlCipherError::KeyTooShort)));
-        unsafe { std::env::remove_var("ECTOLEDGER_SQLCIPHER_KEY") };
-    }
-
-    #[cfg(feature = "sqlcipher")]
-    #[test]
-    fn valid_key_accepted() {
-        unsafe {
-            std::env::set_var(
-                "ECTOLEDGER_SQLCIPHER_KEY",
-                "this-is-a-reasonably-long-key!!",
-            )
-        };
-        let result = read_sqlcipher_key();
-        assert!(result.is_ok());
-        unsafe { std::env::remove_var("ECTOLEDGER_SQLCIPHER_KEY") };
+    fn short_and_empty_keys_are_refused() {
+        assert!(matches!(check_key(""), Err(SqlCipherError::KeyNotSet)));
+        assert!(matches!(
+            check_key("short"),
+            Err(SqlCipherError::KeyTooShort)
+        ));
+        assert!(check_key("this-is-a-reasonably-long-key!!").is_ok());
     }
 }

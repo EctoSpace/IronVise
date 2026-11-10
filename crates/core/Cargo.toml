@@ -3,11 +3,11 @@ name = "ectoledger_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Shared pure logic for the EctoLedger: hashing, Merkle trees, schemas, and policy evaluation"
+description = "Shared pure logic for the IronVise: hashing, Merkle trees, schemas, and policy evaluation"
 license.workspace = true
 
 [dependencies]
-sha2       = "0.10"
+sha2       = "0.11"
 hex        = "0.4"
 subtle     = "2"
 serde      = { version = "1", features = ["derive"] }
@@ -17,13 +17,21 @@ regex-lite = "0.1"
 tracing    = "0.1"
 toml       = "0.8"
 url        = "2"
-ipnetwork  = "0.20"
-thiserror  = "1"
+ipnetwork  = { workspace = true }
+thiserror  = { workspace = true }
 
-# --- Optional BLAKE3 (TM-6b, feature-gated) ---
+# --- Optional BLAKE3 (feature-gated) ---
 blake3     = { version = "1", optional = true }
+
+[dev-dependencies]
+proptest  = { workspace = true }
+criterion = { workspace = true }
 
 [features]
 default = []
-# Use BLAKE3 instead of SHA-256 for content hashing (TM-6b).
+# Use BLAKE3 instead of SHA-256 for content hashing.
 hash-blake3 = ["dep:blake3"]
+
+[[bench]]
+name = "core"
+harness = false

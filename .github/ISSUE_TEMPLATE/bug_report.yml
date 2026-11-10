@@ -1,0 +1,72 @@
+name: Bug report
+description: Something behaves differently from what the documentation says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Not for vulnerabilities.** See [SECURITY.md](../blob/main/SECURITY.md).
+
+        A claim in the documentation that the code contradicts is a bug worth
+        filing on its own - this project's argument is that its claims survive
+        checking, so a claim that does not is a defect.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: "`ectoledger --version`, or the commit you built."
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface
+      options:
+        - Native cognitive loop (audit / orchestrate)
+        - Claude Code PreToolUse hook
+        - SDK verify-intent
+        - SDK event append
+        - Recording proxy
+        - Observer dashboard / HTTP API
+        - Desktop GUI
+        - Certificate verification (verify-cert / verify-certificate)
+        - Build, packaging or container
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: >
+        Ledger backend (postgres / sqlite), feature flags, whether GUARD_REQUIRED
+        was set, whether ECTO_POLICY_PATH was set, and the OS. Redact secrets.
+      placeholder: |
+        DATABASE_URL=sqlite://…
+        GUARD_REQUIRED=true, GUARD_LLM_BACKEND=ollama
+        Linux 6.x, built from source
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and where it says so
+      description: >
+        A file and line is ideal. "The README says X" is a stronger report than
+        "it should do X".
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Exact output, including exit codes. Paste rather than paraphrase.
+    validations:
+      required: true

@@ -6,7 +6,7 @@ License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 Parameters
 
 Licensor:             Björn Roman Kohlberger / EctoSpace
-Licensed Work:        EctoLedger
+Licensed Work:        IronVise (formerly EctoLedger)
                       The Licensed Work is (c) 2024-2026 Björn Roman Kohlberger / EctoSpace
 Change Date:          April 1, 2030
 Change License:       Apache License, Version 2.0
@@ -28,7 +28,44 @@ Additional Use Grant: You may make use of the Licensed Work, provided that you
                       (c) personal evaluation and proof-of-concept work;
                       (d) contributing to the project.
 
-                      For commercial licensing enquiries contact: ectoledger@ectospace.com
+                      VERIFICATION IS NOT PRODUCTION USE.
+
+                      Notwithstanding anything above, you may, for any purpose
+                      including commercial and production purposes, and without
+                      further permission:
+
+                      (i)   run the `verify-cert` binary, and the
+                            `verify-certificate`, `verify-vc` and
+                            `verify-session` commands of the `ironvise`
+                            binary (formerly `ectoledger`), against any
+                            IronVise or EctoLedger certificate, ledger
+                            or credential;
+                      (ii)  inspect, parse and validate any output the Licensed
+                            Work produces, including `.elc` certificates,
+                            ledger event records and Verifiable Credentials;
+                      (iii) write, use and distribute your own independent
+                            implementation of a verifier from the documented
+                            formats, under any licence you choose.
+
+                      This carve-out exists because evidence nobody may check is
+                      not evidence. An auditor, regulator, counterparty or
+                      opposing party must be able to verify what this software
+                      produced without first negotiating a licence with its
+                      author -- and the value of the audit trail depends on that
+                      being true. It is not a general grant: producing new
+                      ledger entries, running the server, the agent loop, the
+                      guard or the GUI in production remains Production Use and
+                      is not permitted under this licence before the Change
+                      Date.
+
+                      SCOPE OF THE LICENSED WORK.
+
+                      The Licensed Work is the Rust workspace (crates/) and the
+                      desktop GUI (gui/). The client SDKs under sdk/ are NOT
+                      part of the Licensed Work: they are separately licensed
+                      under Apache-2.0 and carry their own LICENSE files.
+
+                      For commercial licensing enquiries contact: ironvise@ectospace.com
 
 Terms
 

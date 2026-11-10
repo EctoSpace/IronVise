@@ -1,0 +1,10 @@
+# cargo-mutants settings for `make mutants`. Read only by cargo-mutants.
+#
+# Every exclusion is a mutant no test can observe, with the reason. Anything
+# else that survives is a missing test.
+exclude_re = [
+    # The v1 content-hash input sizes its buffer with `1 + len`; turning that
+    # into `1 * len` only changes the capacity hint. The bytes themselves are
+    # pinned by `content_hash_inputs_are_pinned`.
+    "replace \\+ with \\* in content_hash_input$",
+]

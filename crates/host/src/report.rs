@@ -159,14 +159,28 @@ fn build_report_from_events(
 fn event_summary(e: &LedgerEventRow) -> AuditEventSummary {
     let (kind, summary) = match &e.payload {
         EventPayload::Genesis { message, .. } => ("genesis", message.clone()),
-        EventPayload::PromptInput { content } => ("prompt_input", format!("Goal: {}", content)),
+        EventPayload::PromptInput { content } => ("prompt_input", format!("Goal: {content}")),
         EventPayload::Thought { content } => (
             "thought",
-            if content.len() > 80 {
-                format!("{}...", &content[..80])
+            if content.chars().count() > 80 {
+                format!("{}...", content.chars().take(80).collect::<String>())
             } else {
                 content.clone()
             },
+        ),
+        EventPayload::DataReceipt {
+            tool,
+            source,
+            text_sha256,
+            text_bytes,
+            ..
+        } => (
+            "data_receipt",
+            format!(
+                "{tool} {} returned {text_bytes} bytes in {} text(s), recorded by SHA-256",
+                source.as_deref().unwrap_or(""),
+                text_sha256.len()
+            ),
         ),
         EventPayload::SchemaError {
             message,
@@ -174,21 +188,49 @@ fn event_summary(e: &LedgerEventRow) -> AuditEventSummary {
             max_attempts,
         } => (
             "schema_error",
-            format!("({}/{}) {}", attempt, max_attempts, message),
+            format!("({attempt}/{max_attempts}) {message}"),
+        ),
+        EventPayload::GuardDenial {
+            action,
+            reason,
+            enforced,
+        } => (
+            "guard_denial",
+            format!(
+                "{} {}: {}",
+                action.as_deref().unwrap_or("action"),
+                if *enforced { "prevented" } else { "flagged" },
+                reason
+            ),
+        ),
+        EventPayload::TripwireRejection {
+            action,
+            reason,
+            stage,
+            enforced,
+        } => (
+            "tripwire_rejection",
+            format!(
+                "{} {} at {}: {}",
+                action.as_deref().unwrap_or("prompt"),
+                if *enforced { "prevented" } else { "flagged" },
+                stage,
+                reason
+            ),
         ),
         EventPayload::CircuitBreaker {
             reason,
             consecutive_failures,
         } => (
             "circuit_breaker",
-            format!("({} consecutive failures) {}", consecutive_failures, reason),
+            format!("({consecutive_failures} consecutive failures) {reason}"),
         ),
-        EventPayload::Action { name, params } => ("action", format!("{} {:?}", name, params)),
+        EventPayload::Action { name, params } => ("action", format!("{name} {params:?}")),
         EventPayload::Observation { content } => (
             "observation",
             if content.len() > 80 {
                 let truncated: String = content.chars().take(80).collect();
-                format!("{}...", truncated)
+                format!("{truncated}...")
             } else {
                 content.clone()
             },
@@ -199,10 +241,7 @@ fn event_summary(e: &LedgerEventRow) -> AuditEventSummary {
             action_params_summary,
         } => (
             "approval_required",
-            format!(
-                "gate {}: {} {}",
-                gate_id, action_name, action_params_summary
-            ),
+            format!("gate {gate_id}: {action_name} {action_params_summary}"),
         ),
         EventPayload::ApprovalDecision {
             gate_id,
@@ -272,8 +311,8 @@ fn event_summary(e: &LedgerEventRow) -> AuditEventSummary {
             format!(
                 "[{}] {}",
                 role,
-                if content.len() > 80 {
-                    format!("{}...", &content[..80])
+                if content.chars().nth(80).is_some() {
+                    format!("{}...", content.chars().take(80).collect::<String>())
                 } else {
                     content.clone()
                 }
@@ -333,7 +372,7 @@ pub fn report_to_sarif(report: &AuditReport, session_id: Uuid) -> serde_json::Va
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "EctoLedger",
+                    "name": "IronVise",
                     "version": env!("CARGO_PKG_VERSION"),
                     "informationUri": "https://github.com/EctoSpace/EctoLedger",
                     "rules": report.findings.iter().enumerate().map(|(i, f)| {
@@ -369,7 +408,7 @@ pub fn report_to_html(report: &AuditReport, session_id: Uuid) -> String {
             let seq_links: String = f
                 .evidence_sequences
                 .iter()
-                .map(|seq| format!("<a href=\"#seq-{}\">#{}</a> ", seq, seq))
+                .map(|seq| format!("<a href=\"#seq-{seq}\">#{seq}</a> "))
                 .collect();
             format!(
                 r#"<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>"#,
@@ -398,7 +437,7 @@ pub fn report_to_html(report: &AuditReport, session_id: Uuid) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"/><title>Audit Report — {}</title>
+<head><meta charset="UTF-8"/><title>Audit Report - {}</title>
 <style>
   body {{ font-family: system-ui; margin: 24px; background: #0d1117; color: #c9d1d9; }}
   .hash {{ font-family: monospace; word-break: break-all; }}
@@ -435,6 +474,21 @@ pub fn report_to_html(report: &AuditReport, session_id: Uuid) -> String {
     )
 }
 
+/// Workflow-command escaping, as GitHub's toolkit does it. Finding text comes
+/// from the model and the audited system; unescaped, a newline in it starts a
+/// new workflow command (`::set-output`, `::add-mask`, …) in the CI log.
+fn escape_actions_data(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+fn escape_actions_property(s: &str) -> String {
+    escape_actions_data(s)
+        .replace(':', "%3A")
+        .replace(',', "%2C")
+}
+
 /// Emits GitHub Actions workflow command strings so findings appear inline in CI logs.
 ///
 /// Severity mapping:
@@ -455,7 +509,7 @@ pub fn report_to_github_actions(report: &AuditReport) -> String {
             let seq_refs: String = f
                 .evidence_sequences
                 .iter()
-                .map(|s| format!("ledger seq: {}", s))
+                .map(|s| format!("ledger seq: {s}"))
                 .collect::<Vec<_>>()
                 .join(", ");
             let detail = if seq_refs.is_empty() {
@@ -464,12 +518,15 @@ pub fn report_to_github_actions(report: &AuditReport) -> String {
                 format!("{} [{}]", f.evidence, seq_refs)
             };
             format!(
-                "::{level} title={severity} Finding #{n} - {title}::{detail}",
+                "::{level} title={title}::{detail}",
                 level = level,
-                severity = f.severity,
-                n = i + 1,
-                title = f.title,
-                detail = detail,
+                title = escape_actions_property(&format!(
+                    "{} Finding #{} - {}",
+                    f.severity,
+                    i + 1,
+                    f.title
+                )),
+                detail = escape_actions_data(&detail),
             )
         })
         .collect::<Vec<_>>()
@@ -528,4 +585,101 @@ pub enum ReportError {
     Db(#[from] sqlx::Error),
     #[error("session not found: {0}")]
     SessionNotFound(Uuid),
+}
+
+#[cfg(test)]
+mod actions_tests {
+    use super::*;
+
+    fn report_with(title: &str, evidence: &str) -> AuditReport {
+        AuditReport {
+            session: SessionRow {
+                id: Uuid::nil(),
+                goal: "g".into(),
+                goal_hash: None,
+                status: "completed".into(),
+                llm_backend: None,
+                llm_model: None,
+                created_at: chrono::Utc::now(),
+                finished_at: None,
+                policy_hash: None,
+                session_public_key: None,
+                session_did: None,
+                enclave_attestation_json: None,
+            },
+            ledger_hash: String::new(),
+            verification_status: ChainVerificationStatus::NotChecked,
+            findings: vec![VerifiedFinding {
+                severity: "high".into(),
+                title: title.into(),
+                evidence: evidence.into(),
+                recommendation: String::new(),
+                evidence_sequences: vec![],
+            }],
+            timeline: vec![],
+            metrics: AuditMetrics {
+                event_count: 0,
+                finding_count: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn escapes_follow_the_actions_toolkit() {
+        assert_eq!(escape_actions_data("100%\r\nx"), "100%25%0D%0Ax");
+        assert_eq!(escape_actions_property("a:b,c%\n"), "a%3Ab%2Cc%25%0A");
+        assert_eq!(escape_actions_data("a:b,c"), "a:b,c");
+    }
+
+    #[test]
+    fn a_finding_cannot_start_its_own_workflow_command() {
+        let out = report_to_github_actions(&report_with(
+            "t::x,y",
+            "leak\n::add-mask::secret\r\n::set-output name=a::b",
+        ));
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert!(out.starts_with("::error title=high Finding #1 - t%3A%3Ax%2Cy::"));
+        let detail = out.split_once("%2Cy::").unwrap().1;
+        assert_eq!(
+            detail,
+            "leak%0A::add-mask::secret%0D%0A::set-output name=a::b"
+        );
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    fn row(payload: EventPayload) -> LedgerEventRow {
+        LedgerEventRow {
+            id: 1,
+            sequence: 1,
+            previous_hash: String::new(),
+            content_hash: String::new(),
+            payload,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn a_long_chat_message_with_multibyte_text_is_cut_at_80_characters() {
+        // A two-byte character straddles byte 80, where a byte slice panics.
+        let content = format!("{}é{}", "a".repeat(79), "b".repeat(40));
+        let summary = event_summary(&row(EventPayload::ChatMessage {
+            role: "user".into(),
+            content,
+            backend: None,
+            model: None,
+        }));
+        assert_eq!(summary.kind, "chat_message");
+        assert_eq!(summary.summary, format!("[user] {}é...", "a".repeat(79)));
+    }
+
+    #[test]
+    fn a_long_observation_with_multibyte_text_is_cut_at_80_characters() {
+        let content = "日本語".repeat(40);
+        let summary = event_summary(&row(EventPayload::Observation { content }));
+        assert_eq!(summary.summary.chars().count(), 83);
+    }
 }

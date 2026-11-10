@@ -1,10 +1,11 @@
 <!--
-  Enterprise Input component.
+  Input - text field primitive.
   Usage:
     <Input bind:value={goal} placeholder="Enter audit goal…" />
 -->
 <script lang="ts">
   import { cn } from "../utils";
+  import { NO_SUGGESTIONS } from "./noSuggestions";
 
   interface Props {
     value?: string;
@@ -14,8 +15,12 @@
     class?: string;
     id?: string;
     name?: string;
+    list?: string;
     oninput?: (e: Event) => void;
     onkeydown?: (e: KeyboardEvent) => void;
+    /** False for a search field: no autocomplete, autocorrect or OS writing
+     *  suggestions. */
+    suggestions?: boolean;
   }
 
   let {
@@ -26,8 +31,10 @@
     class: className = "",
     id,
     name,
+    list,
     oninput,
     onkeydown,
+    suggestions = true,
   }: Props = $props();
 </script>
 
@@ -35,11 +42,13 @@
   {type}
   {id}
   {name}
+  {list}
   {disabled}
   {placeholder}
   bind:value
   {oninput}
   {onkeydown}
+  {...suggestions ? {} : NO_SUGGESTIONS}
   class={cn(
     "flex h-11 w-full rounded-xl border border-border-muted/40 bg-surface-elevated/40 px-5 py-2",
     "text-sm text-text-primary placeholder:text-text-muted",

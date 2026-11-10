@@ -1,0 +1,60 @@
+name: Verification finding
+description: A verifier accepted evidence it should have rejected, or rejected evidence it should have accepted.
+labels: ["verification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the report this project most wants. `examples/verified-session/`
+        and `examples/challenge/` exist to be attacked, and their READMEs record
+        what has already been tried.
+
+        If the finding lets someone pass off forged evidence as genuine, it is a
+        vulnerability - email it instead, see
+        [SECURITY.md](../blob/main/SECURITY.md).
+  - type: dropdown
+    id: direction
+    attributes:
+      label: Which way did it fail
+      options:
+        - A verifier ACCEPTED something it should have rejected
+        - A verifier REJECTED something it should have accepted
+        - The two verifier implementations disagree with each other
+    validations:
+      required: true
+  - type: dropdown
+    id: verifier
+    attributes:
+      label: Which verifier
+      options:
+        - verify-cert (standalone binary)
+        - ectoledger verify-certificate
+        - examples/verified-session/verify_elc.py (independent Python)
+        - ectoledger verify-session
+        - ectoledger verify-ledger
+    validations:
+      required: true
+  - type: input
+    id: flags
+    attributes:
+      label: Flags used
+      description: "`--strict`, `--expected-key`, `--require-anchor` change the answer. Say which were set."
+      placeholder: "--strict --expected-key 374ef7…"
+  - type: textarea
+    id: mutation
+    attributes:
+      label: What you changed, and what the verifier said
+      description: >
+        The exact mutation - which field, from what to what - and the verifier's
+        full output. Attach the artifact if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the answer is wrong
+      description: >
+        Ideally against `docs/reference/elc-spec.md`, which is the specification both
+        implementations are written to.
+    validations:
+      required: true

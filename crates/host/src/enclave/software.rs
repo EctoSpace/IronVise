@@ -5,8 +5,8 @@ use crate::enclave::runtime::{
 /// Level 1: Software-hardened enclave.
 ///
 /// Protects the inference buffer with `mlock` (preventing swap-out) and
-/// zeroizes memory on destroy.  Does not provide a hardware trust boundary —
-/// the LLM call is made on the host — but it prevents casual memory inspection
+/// zeroizes memory on destroy.  Does not provide a hardware trust boundary -
+/// the LLM call is made on the host - but it prevents casual memory inspection
 /// and ensures prompt/response bytes never hit disk.
 pub struct SoftwareEnclaveRuntime {
     /// Locked memory region for prompt/response buffering.
@@ -56,7 +56,7 @@ impl EnclaveRuntime for SoftwareEnclaveRuntime {
                 )
             };
             if ret != 0 {
-                // mlock failure is not fatal — log but proceed.  On CI / sandboxed
+                // mlock failure is not fatal - log but proceed.  On CI / sandboxed
                 // environments the rlimit may be too low.
                 let err = std::io::Error::last_os_error();
                 let errno = err.raw_os_error().unwrap_or(-1);
@@ -93,7 +93,7 @@ impl EnclaveRuntime for SoftwareEnclaveRuntime {
     }
 
     fn execute(&self, req: EnclaveRequest) -> Result<EnclaveResponse, String> {
-        // Level 1: passthrough — the prompt bytes are returned as-is.
+        // Level 1: passthrough - the prompt bytes are returned as-is.
         // The actual LLM call is made by the cognitive loop *through* this enclave;
         // `SoftwareEnclaveRuntime` only guarantees memory protection, not isolation.
         Ok(EnclaveResponse {
@@ -120,7 +120,6 @@ impl EnclaveRuntime for SoftwareEnclaveRuntime {
             self.buffer.zeroize();
         }
 
-        // Unlock.
         if self.locked {
             #[cfg(unix)]
             unsafe {

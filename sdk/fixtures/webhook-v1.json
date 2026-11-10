@@ -1,0 +1,91 @@
+{
+  "cases": [
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s1\"}",
+      "expect": "ok",
+      "headers": {
+        "X-EctoLedger-Delivery": "3f2b8c1e-5d4a-4c3b-9e8f-7a6b5c4d3e2f",
+        "X-EctoLedger-Signature-V1": "b1d236572dfd80e09a312bf7f163a682e7a7cb3957c9deeafa8e48a38e36533c",
+        "X-EctoLedger-Timestamp": "1790700000"
+      },
+      "name": "valid",
+      "now": 1790700010,
+      "receiver_key": "cbeb9af06b0c8e3afdc3b70d8bd0ae84203d574916ec04fa9be6ee2f66c1d6be",
+      "receiver_url": "https://siem.example/ectoledger"
+    },
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s1\"}",
+      "expect": "bad_signature",
+      "headers": {
+        "X-EctoLedger-Delivery": "3f2b8c1e-5d4a-4c3b-9e8f-7a6b5c4d3e2f",
+        "X-EctoLedger-Signature-V1": "b1d236572dfd80e09a312bf7f163a682e7a7cb3957c9deeafa8e48a38e36533c",
+        "X-EctoLedger-Timestamp": "1790700000"
+      },
+      "name": "presented to another receiver",
+      "now": 1790700010,
+      "receiver_key": "9f113822f5115791d733ac03aff59d3b10ab08b8d2b6c86fa91a357d1ce4176e",
+      "receiver_url": "https://other.example/ectoledger"
+    },
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s2\"}",
+      "expect": "bad_signature",
+      "headers": {
+        "X-EctoLedger-Delivery": "3f2b8c1e-5d4a-4c3b-9e8f-7a6b5c4d3e2f",
+        "X-EctoLedger-Signature-V1": "b1d236572dfd80e09a312bf7f163a682e7a7cb3957c9deeafa8e48a38e36533c",
+        "X-EctoLedger-Timestamp": "1790700000"
+      },
+      "name": "body altered",
+      "now": 1790700010,
+      "receiver_key": "cbeb9af06b0c8e3afdc3b70d8bd0ae84203d574916ec04fa9be6ee2f66c1d6be",
+      "receiver_url": "https://siem.example/ectoledger"
+    },
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s1\"}",
+      "expect": "stale",
+      "headers": {
+        "X-EctoLedger-Delivery": "3f2b8c1e-5d4a-4c3b-9e8f-7a6b5c4d3e2f",
+        "X-EctoLedger-Signature-V1": "b1d236572dfd80e09a312bf7f163a682e7a7cb3957c9deeafa8e48a38e36533c",
+        "X-EctoLedger-Timestamp": "1790700000"
+      },
+      "name": "older than the tolerance",
+      "now": 1790700301,
+      "receiver_key": "cbeb9af06b0c8e3afdc3b70d8bd0ae84203d574916ec04fa9be6ee2f66c1d6be",
+      "receiver_url": "https://siem.example/ectoledger"
+    },
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s1\"}",
+      "expect": "stale",
+      "headers": {
+        "X-EctoLedger-Delivery": "3f2b8c1e-5d4a-4c3b-9e8f-7a6b5c4d3e2f",
+        "X-EctoLedger-Signature-V1": "b1d236572dfd80e09a312bf7f163a682e7a7cb3957c9deeafa8e48a38e36533c",
+        "X-EctoLedger-Timestamp": "1790700000"
+      },
+      "name": "newer than the tolerance",
+      "now": 1790699699,
+      "receiver_key": "cbeb9af06b0c8e3afdc3b70d8bd0ae84203d574916ec04fa9be6ee2f66c1d6be",
+      "receiver_url": "https://siem.example/ectoledger"
+    },
+    {
+      "body": "{\"event_kind\":\"tripwire_rejection\",\"session_id\":\"s1\"}",
+      "expect": "missing_headers",
+      "headers": {
+        "X-EctoLedger-Signature": "sha256=e95725a9e58223831999a0bcf6e5bc36e90cf497a0f0454004b5b729a401b1ad"
+      },
+      "name": "legacy body-only signature",
+      "now": 1790700000,
+      "receiver_key": "cbeb9af06b0c8e3afdc3b70d8bd0ae84203d574916ec04fa9be6ee2f66c1d6be",
+      "receiver_url": "https://siem.example/ectoledger"
+    }
+  ],
+  "replay": {
+    "case": "valid",
+    "expect": [
+      "ok",
+      "replayed"
+    ],
+    "presentations": 2
+  },
+  "scheme": "ectoledger-webhook-v1",
+  "secret": "fixture-secret-not-for-production",
+  "tolerance_secs": 300
+}

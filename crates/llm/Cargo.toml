@@ -3,7 +3,7 @@ name        = "ectoledger-llm"
 version.workspace     = true
 edition.workspace     = true
 authors.workspace     = true
-description = "LLM backend abstraction and provider implementations for EctoLedger"
+description = "LLM backend abstraction and provider implementations for IronVise"
 license.workspace     = true
 
 [dependencies]
@@ -12,10 +12,15 @@ async-trait     = { workspace = true }
 thiserror       = { workspace = true }
 serde           = { workspace = true }
 serde_json      = { workspace = true }
-reqwest         = { version = "0.13", features = ["json"] }
+reqwest         = { version = "0.13", features = ["json", "stream"] }
+futures-util    = "0.3"
 regex-lite      = { workspace = true }
 tokio           = { version = "1", features = ["process"] }
 tracing         = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+proptest = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt", "net", "time"] }
+axum  = { version = "0.8" }
+http  = "1"
+bytes = "1"

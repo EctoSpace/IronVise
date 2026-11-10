@@ -1,4 +1,4 @@
-//! Unified error type for the EctoLedger host crate.
+//! Unified error type for the IronVise host crate.
 //!
 //! `EctoLedgerError` wraps every module-level error behind a single enum so
 //! that public API surfaces (commands, server, SDK bindings) can propagate
@@ -16,7 +16,6 @@
 /// when the calling function returns `Result<T, EctoLedgerError>`.
 #[derive(Debug, thiserror::Error)]
 pub enum EctoLedgerError {
-    // ── Infrastructure ────────────────────────────────────────────────────────
     /// I/O error (file system, network, process).
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -33,7 +32,6 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     DbSetup(#[from] crate::db_setup::DbSetupError),
 
-    // ── Core agent operations ─────────────────────────────────────────────────
     /// Agent cognitive-loop error.
     #[error(transparent)]
     Agent(#[from] crate::agent::AgentError),
@@ -50,7 +48,6 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     Policy(#[from] crate::policy::PolicyLoadError),
 
-    // ── Execution & sandboxing ────────────────────────────────────────────────
     /// Command / tool execution error.
     #[error(transparent)]
     Executor(#[from] crate::executor::ExecuteError),
@@ -67,7 +64,6 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     Blocking(#[from] crate::blocking::BlockingTaskError),
 
-    // ── AI / LLM ──────────────────────────────────────────────────────────────
     /// LLM backend error.
     #[error(transparent)]
     Llm(#[from] crate::llm::LlmError),
@@ -76,7 +72,6 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     OllamaSetup(#[from] crate::ollama::OllamaSetupError),
 
-    // ── Reporting & verification ──────────────────────────────────────────────
     /// Report generation error.
     #[error(transparent)]
     Report(#[from] crate::report::ReportError),
@@ -93,16 +88,10 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     Snapshot(#[from] crate::snapshot::SnapshotError),
 
-    // ── External anchoring ────────────────────────────────────────────────────
     /// OpenTimestamps error.
     #[error(transparent)]
     Ots(#[from] crate::ots::OtsError),
 
-    /// EVM on-chain anchor error.
-    #[error(transparent)]
-    EvmAnchor(#[from] crate::evm_anchor::EvmAnchorError),
-
-    // ── Multi-agent ───────────────────────────────────────────────────────────
     /// Orchestrator error.
     #[error(transparent)]
     Orchestrator(#[from] crate::orchestrator::OrchestratorError),
@@ -119,7 +108,6 @@ pub enum EctoLedgerError {
     #[error(transparent)]
     WakeUp(#[from] crate::wakeup::WakeUpError),
 
-    // ── Catch-all ─────────────────────────────────────────────────────────────
     /// Unstructured / ad-hoc error (replaces `format!("...").into()` patterns).
     #[error("{0}")]
     Other(String),

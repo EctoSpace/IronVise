@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { Button, FieldLabel } from "./ui";
 
   interface Webhook {
     id: string;
@@ -12,10 +13,13 @@
     created_at: string;
   }
 
+  // Webhook filters match on webhook EGRESS kinds (EgressKind in
+  // crates/host/src/webhook.rs), not on ledger event kinds. There are exactly
+  // three, and the match is an exact string comparison server-side - so a name
+  // that is not in this list silently forwards nothing.
+  // Kept in sync by the drift test in crates/host/src/schema.rs.
   const ALL_KINDS = [
-    "user_prompt", "llm_response", "tool_call", "tool_result",
-    "guard_violation", "tripwire_triggered", "key_rotation",
-    "session_start", "session_end", "verifiable_credential",
+    "observation", "guard_denial", "tripwire_rejection",
   ];
 
   const FORMAT_LABELS: Record<string, string> = {
@@ -29,7 +33,6 @@
   let error = $state("");
   let success = $state("");
 
-  // Create form
   let newLabel = $state("");
   let newUrl = $state("");
   let newBearer = $state("");
@@ -139,17 +142,17 @@
   <p class="text-text-muted text-sm">Forward ledger events to external SIEM systems or endpoints.</p>
 
   {#if error}
-    <div class="bg-danger-muted border border-danger/30 text-danger px-4 py-3 rounded-xl text-sm">{error}</div>
+    <div class="bg-danger-muted border border-danger/30 text-danger-text px-4 py-3 rounded-xl text-sm">{error}</div>
   {:else if success}
     <div class="bg-success-muted border border-success/30 text-success px-4 py-3 rounded-xl text-sm">{success}</div>
   {/if}
 
   <!-- Create panel toggle -->
-  <div class="flex items-center gap-4">
-    <button class="bg-success hover:bg-success/80 text-white rounded-xl px-6 py-3 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] shadow-sm hover:shadow-md" onclick={() => (showCreate = !showCreate)}>
+  <div class="flex items-center gap-4 flex-wrap min-w-0">
+    <Button variant={showCreate ? "secondary" : "success"} onclick={() => (showCreate = !showCreate)}>
       {showCreate ? "✕ Cancel" : "+ Add Webhook"}
-    </button>
-    <button class="bg-transparent border border-border-muted/30 text-text-muted rounded-xl px-4 py-2 text-xs cursor-pointer hover:text-text-primary hover:bg-surface-elevated transition-all duration-200" onclick={load}>↺ Refresh</button>
+    </Button>
+    <Button variant="ghost" size="sm" onclick={load}>↺ Refresh</Button>
   </div>
 
   {#if showCreate}
@@ -157,16 +160,16 @@
       <h3 class="text-base font-semibold text-text-primary mb-5">New Webhook</h3>
       <div class="flex gap-4 flex-wrap mb-5">
         <div class="flex flex-col gap-1.5 flex-[1.5] min-w-[140px]">
-          <label for="wh-label" class="text-xs text-text-muted uppercase tracking-wide">Label</label>
+          <FieldLabel for="wh-label">Label</FieldLabel>
           <input id="wh-label" type="text" bind:value={newLabel} placeholder="e.g. Splunk SIEM" class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl px-5 py-3 text-text-primary text-sm font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200" />
         </div>
         <div class="flex flex-col gap-1.5 flex-[2] min-w-[140px]">
-          <label for="webhook-url" class="text-xs text-text-muted uppercase tracking-wide">Endpoint URL</label>
+          <FieldLabel for="webhook-url">Endpoint URL</FieldLabel>
           <input id="webhook-url" type="url" bind:value={newUrl} placeholder="https://siem.example.com/events" class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl px-5 py-3 text-text-primary text-sm font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200" />
         </div>
         <div class="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-          <label for="wh-format" class="text-xs text-text-muted uppercase tracking-wide">SIEM Format</label>
-          <select id="wh-format" bind:value={newFormat} class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl px-5 py-3 text-text-primary text-sm font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200">
+          <FieldLabel for="wh-format">SIEM Format</FieldLabel>
+          <select id="wh-format" bind:value={newFormat} class="bg-surface-elevated border border-border-muted rounded-xl px-5 py-3 text-text-primary text-sm font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200">
             {#each Object.entries(FORMAT_LABELS) as [val, lbl]}
               <option value={val}>{lbl}</option>
             {/each}
@@ -176,7 +179,7 @@
 
       <div class="flex gap-4 flex-wrap mb-5">
         <div class="flex flex-col gap-1.5 flex-[2] min-w-[140px]">
-          <label for="wh-bearer" class="text-xs text-text-muted uppercase tracking-wide">Bearer Token (optional)</label>
+          <FieldLabel for="wh-bearer">Bearer Token (optional)</FieldLabel>
           <input id="wh-bearer" type="password" bind:value={newBearer} placeholder="Leave blank for none" class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl px-5 py-3 text-text-primary text-sm font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition-all duration-200" />
         </div>
         <div class="flex flex-col gap-1 flex-1 min-w-[140px] justify-end pt-4">
@@ -188,12 +191,12 @@
       </div>
 
       <div class="flex flex-col gap-1.5 min-w-[140px] mb-5">
-        <span class="text-xs text-text-muted uppercase tracking-wide">Filter Event Kinds <span class="normal-case text-text-muted text-xs">(empty = all events)</span></span>
+        <FieldLabel>Filter Event Kinds <span class="normal-case text-text-muted text-xs">(empty = all events)</span></FieldLabel>
         <div class="flex flex-wrap gap-2.5 mt-2">
           {#each ALL_KINDS as kind}
             <button
               type="button"
-              class="px-3.5 py-2 rounded-xl text-xs cursor-pointer border transition-all duration-200 font-mono {newFilterKinds.includes(kind) ? 'bg-accent-muted border-accent text-accent' : 'bg-border-muted border-border-muted/30 text-text-muted hover:border-text-muted'}"
+              class="px-3.5 py-2 rounded-xl text-xs cursor-pointer border transition-all duration-200 font-mono {newFilterKinds.includes(kind) ? 'bg-accent-muted border-accent text-accent-text' : 'bg-border-muted border-border-muted/30 text-text-muted hover:border-text-muted'}"
               onclick={() => toggleFilterKind(kind)}
             >{kind}</button>
           {/each}
@@ -201,9 +204,9 @@
       </div>
 
       <div class="flex gap-4 mt-3">
-        <button class="bg-success hover:bg-success/80 text-white rounded-xl px-6 py-3 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] shadow-sm hover:shadow-md" onclick={create} disabled={creating || !newLabel.trim() || !newUrl.trim()}>
+        <Button variant="success" onclick={create} disabled={creating || !newLabel.trim() || !newUrl.trim()} loading={creating}>
           {creating ? "Creating…" : "Create Webhook"}
-        </button>
+        </Button>
       </div>
     </section>
   {/if}
@@ -218,31 +221,31 @@
     {:else}
       <div class="flex flex-col gap-3">
         {#each webhooks as wh}
-          <div class="bg-background rounded-2xl px-6 py-5 flex justify-between items-center gap-4 transition-all duration-200 {wh.enabled ? '' : 'opacity-55'}">
+          <div class="bg-background rounded-2xl px-6 py-5 flex justify-between items-center gap-4 flex-wrap transition-all duration-200 min-w-0 {wh.enabled ? '' : 'opacity-55'}">
             <div class="flex-1 min-w-0 flex flex-col gap-1">
               <div class="flex items-center gap-2.5 flex-wrap">
                 <span class="font-semibold text-text-primary text-sm">{wh.label}</span>
                 <span class="text-xs bg-border-muted text-text-secondary px-2 py-0.5 rounded-lg font-mono">{FORMAT_LABELS[wh.siem_format] ?? wh.siem_format}</span>
-                <span class="text-xs px-2 py-0.5 rounded-full font-semibold {wh.enabled ? 'bg-success-muted text-success' : 'bg-gray-500/15 text-text-secondary'}">
+                <span class="text-xs px-2 py-0.5 rounded-full font-semibold {wh.enabled ? 'bg-success-muted text-success' : 'bg-text-muted/15 text-text-secondary'}">
                   {wh.enabled ? "Enabled" : "Disabled"}
                 </span>
               </div>
-              <div class="text-xs text-accent overflow-hidden text-ellipsis whitespace-nowrap">{wh.url}</div>
+              <div class="text-xs text-accent-text overflow-hidden text-ellipsis whitespace-nowrap">{wh.url}</div>
               <div class="text-xs text-text-muted">
                 Events: {formatKindsDisplay(wh.filter_kinds)} &nbsp;&bull;&nbsp;
                 Created: {formatDate(wh.created_at)}
               </div>
             </div>
-            <div class="flex gap-3 shrink-0">
-              <button
-                class="bg-transparent border border-border-muted/30 text-text-muted rounded-xl px-4 py-2 text-xs cursor-pointer hover:text-text-primary hover:bg-surface-elevated transition-all duration-200"
+            <div class="flex gap-3 shrink-0 flex-wrap">
+              <Button
+                variant="ghost"
+                size="sm"
                 onclick={() => toggleHook(wh)}
                 disabled={togglingId === wh.id}
-                title="{wh.enabled ? 'Disable' : 'Enable'} webhook"
               >
                 {wh.enabled ? "Disable" : "Enable"}
-              </button>
-              <button class="bg-danger hover:bg-danger/80 text-white rounded-xl px-4 py-2 text-xs cursor-pointer transition-all duration-200" onclick={() => deleteHook(wh.id)}>Delete</button>
+              </Button>
+              <Button variant="danger" size="sm" onclick={() => deleteHook(wh.id)}>Delete</Button>
             </div>
           </div>
         {/each}

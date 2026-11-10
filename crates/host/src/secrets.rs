@@ -18,7 +18,7 @@
 //! ```no_run
 //! use ectoledger::secrets::load_env_secret;
 //!
-//! if let Some(key) = load_env_secret("EVM_PRIVATE_KEY") {
+//! if let Some(key) = load_env_secret("SOME_API_TOKEN") {
 //!     // key is automatically zeroized when dropped
 //!     let raw = key.expose_secret();
 //!     // ... use the key ...
@@ -112,8 +112,8 @@ mod tests {
     #[test]
     fn secret_string_redacts_display() {
         let s = SecretString::new("hunter2".to_string());
-        assert_eq!(format!("{}", s), "[REDACTED]");
-        assert_eq!(format!("{:?}", s), "[REDACTED]");
+        assert_eq!(format!("{s}"), "[REDACTED]");
+        assert_eq!(format!("{s:?}"), "[REDACTED]");
     }
 
     #[test]

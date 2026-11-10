@@ -1,5 +1,5 @@
 <!--
-  StatusDot — animated status indicator.
+  StatusDot - animated status indicator.
   Usage:
     <StatusDot status="running" />
     <StatusDot status="passed" label="Session passed" />

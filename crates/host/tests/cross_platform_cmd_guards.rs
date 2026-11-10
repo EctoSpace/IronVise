@@ -5,7 +5,7 @@
 //! target Windows CMD (`cmd /C` wrappers) as well as their Linux-side
 //! equivalents from the QA test matrix.
 //!
-//! All tests are deterministic — no process spawning, no LLM, no database.
+//! All tests are deterministic - no process spawning, no LLM, no database.
 //! They exercise the public `Tripwire::validate` and `validate_path_strict`
 //! APIs directly.
 //!
@@ -17,12 +17,10 @@
 
 use ectoledger::intent::ProposedIntent;
 use ectoledger::tripwire::{
-    Tripwire, default_allowed_command_executables, default_banned_command_patterns,
+    Tripwire, TripwireError, default_allowed_command_executables, default_banned_command_patterns,
     validate_path_strict,
 };
 use std::path::PathBuf;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Build a `ProposedIntent` for `run_command`.
 fn cmd(command: &str) -> ProposedIntent {
@@ -68,15 +66,10 @@ fn assert_tripwire_rejects(tw: &Tripwire, intent: &ProposedIntent, label: &str) 
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// WINDOWS CMD INJECTION VECTORS
 // From QA matrix: Test Vector | Windows (CMD Builtin Wrapper) | Expected Result
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod windows_cmd_injection {
     use super::*;
-
-    // ── Command injection via & (ampersand chains two commands) ───────────
 
     /// QA matrix row 1: `cmd /C dir & type secret.txt`
     /// The `&` metacharacter must be rejected by the tripwire.
@@ -90,7 +83,7 @@ mod windows_cmd_injection {
         );
     }
 
-    /// Variant: just the `&` without cmd wrapper — still rejected.
+    /// Variant: just the `&` without cmd wrapper - still rejected.
     #[test]
     fn bare_ampersand_chain() {
         let tw = default_tripwire();
@@ -126,10 +119,8 @@ mod windows_cmd_injection {
         assert_tripwire_rejects(&tw, &cmd("cmd /C dir | findstr secret"), "cmd_pipe_chain");
     }
 
-    // ── Output redirection (>) ────────────────────────────────────────────
-
     /// QA matrix row 3: `cmd /C echo "test" > file`
-    /// Windows CMD processes `>` natively — the tripwire must reject this.
+    /// Windows CMD processes `>` natively - the tripwire must reject this.
     #[test]
     fn cmd_redirect_stdout() {
         let tw = default_tripwire();
@@ -151,8 +142,6 @@ mod windows_cmd_injection {
         );
     }
 
-    // ── Semicolon injection ───────────────────────────────────────────────
-
     #[test]
     fn cmd_semicolon_chain() {
         let tw = default_tripwire();
@@ -163,7 +152,6 @@ mod windows_cmd_injection {
         );
     }
 
-    // ── certutil abuse (download / encode / decode) ───────────────────────
     // certutil is blocked at the executor layer (validate_program_args) and
     // by the strict tripwire's executable allowlist (certutil ∉ allowlist).
     // The default (no-allowlist) tripwire does not reject it because the
@@ -178,8 +166,6 @@ mod windows_cmd_injection {
             "cmd_certutil_urlcache",
         );
     }
-
-    // ── Strict allowlist: cmd.exe itself is NOT on the allowlist ──────────
 
     #[test]
     fn cmd_exe_not_in_allowlist() {
@@ -197,15 +183,12 @@ mod windows_cmd_injection {
         );
     }
 
-    // ── Environment variable manipulation ─────────────────────────────────
-
     #[test]
     fn cmd_set_path_injection() {
         let tw = default_tripwire();
-        // `set PATH=...` would poison the child environment
-        // but the tripwire rejects cmd.exe via allowlist; for default_tripwire
-        // (no allowlist), the command still needs `&` or `;` to be dangerous.
-        // Test that `cmd /C set PATH=X & whoami` is rejected (ampersand).
+        // `set PATH=...` would poison the child environment, but the tripwire
+        // rejects cmd.exe via allowlist; for default_tripwire (no allowlist),
+        // the command still needs `&` or `;` to be dangerous.
         assert_tripwire_rejects(
             &tw,
             &cmd("cmd /C set PATH=malicious & whoami"),
@@ -214,10 +197,7 @@ mod windows_cmd_injection {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// WINDOWS PATH TRAVERSAL VECTORS
 // QA matrix row 2: `cmd /C type ..\..\secret`
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod windows_path_traversal {
     use super::*;
@@ -225,37 +205,36 @@ mod windows_path_traversal {
     /// `..\..\secret` uses Windows-style backslash separators.
     /// `validate_path_strict` must reject the `..` component.
     /// On Unix, backslash is not a directory separator, so `..\..\secret` is
-    /// treated as a single filename — this test only applies on Windows.
+    /// treated as a single filename - this test only applies on Windows.
     #[test]
     #[cfg(target_os = "windows")]
     fn backslash_dot_dot_rejected() {
         let prefixes = vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\"))];
-        let result = validate_path_strict("..\\..\\secret", &prefixes);
+        let err = validate_path_strict("..\\..\\secret", &prefixes).unwrap_err();
         assert!(
-            result.is_err(),
-            "backslash path traversal should be rejected: {:?}",
-            result,
+            matches!(err, TripwireError::PathTraversal(_)),
+            "backslash path traversal should be PathTraversal, got: {:?}",
+            err,
         );
     }
 
-    /// On Unix, backslash-separated `..` is not a path traversal — it's a literal
+    /// On Unix, backslash-separated `..` is not a path traversal - it's a literal
     /// filename. Ensure validate_path_strict does NOT reject it as traversal
     /// (it may still reject it for other reasons like prefix mismatch).
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn backslash_not_separator_on_unix() {
         let prefixes = vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))];
-        // On Unix, `..\..\secret` is a single Component::Normal — no ParentDir.
+        // On Unix, `..\..\secret` is a single Component::Normal - no ParentDir.
         // validate_path_strict should not report PathTraversal.
         let result = validate_path_strict("..\\..\\secret", &prefixes);
         // It may Ok or Err for other reasons (e.g., prefix mismatch), but
         // should NOT be Err(PathTraversal).
         if let Err(ref e) = result {
-            let msg = format!("{}", e);
+            let msg = format!("{e}");
             assert!(
                 !msg.contains("path traversal"),
-                "Unix should not treat backslash as separator: {}",
-                msg,
+                "Unix should not treat backslash as separator: {msg}",
             );
         }
     }
@@ -264,11 +243,10 @@ mod windows_path_traversal {
     #[test]
     fn forward_slash_dot_dot_rejected() {
         let prefixes = vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))];
-        let result = validate_path_strict("../../secret", &prefixes);
+        let err = validate_path_strict("../../secret", &prefixes).unwrap_err();
         assert!(
-            result.is_err(),
-            "forward-slash path traversal should be rejected: {:?}",
-            result,
+            matches!(err, TripwireError::PathTraversal(_)),
+            "forward-slash path traversal should be PathTraversal, got: {err:?}",
         );
     }
 
@@ -276,11 +254,10 @@ mod windows_path_traversal {
     #[test]
     fn deep_traversal_rejected() {
         let prefixes = vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))];
-        let result = validate_path_strict("../../../etc/passwd", &prefixes);
+        let err = validate_path_strict("../../../etc/passwd", &prefixes).unwrap_err();
         assert!(
-            result.is_err(),
-            "deep path traversal should be rejected: {:?}",
-            result,
+            matches!(err, TripwireError::PathTraversal(_)),
+            "deep path traversal should be PathTraversal, got: {err:?}",
         );
     }
 
@@ -288,18 +265,15 @@ mod windows_path_traversal {
     #[test]
     fn absolute_with_dot_dot_rejected() {
         let prefixes = vec![PathBuf::from("/home/user")];
-        let result = validate_path_strict("/home/user/../root/.ssh/id_rsa", &prefixes);
+        let err = validate_path_strict("/home/user/../root/.ssh/id_rsa", &prefixes).unwrap_err();
         assert!(
-            result.is_err(),
-            "absolute path with .. should be rejected: {:?}",
-            result,
+            matches!(err, TripwireError::PathTraversal(_)),
+            "absolute path with .. should be PathTraversal, got: {err:?}",
         );
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
 // LINUX HOST INJECTION VECTORS (from QA matrix Linux column)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod linux_host_injection {
     use super::*;
@@ -317,7 +291,7 @@ mod linux_host_injection {
     }
 
     /// QA matrix row 2 (Linux): `cat ../../../secret`
-    /// The command itself contains `..` path traversal — but note that the
+    /// The command itself contains `..` path traversal - but note that the
     /// tripwire's metacharacter/ban checks fire on the *command* string,
     /// not on individual arguments as paths. The path traversal is caught
     /// either by the tripwire's banned pattern or by `validate_path_strict`
@@ -325,11 +299,10 @@ mod linux_host_injection {
     #[test]
     fn cat_path_traversal_via_validate_path() {
         let prefixes = vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp"))];
-        let result = validate_path_strict("../../../secret", &prefixes);
+        let err = validate_path_strict("../../../secret", &prefixes).unwrap_err();
         assert!(
-            result.is_err(),
-            "path traversal should be rejected: {:?}",
-            result,
+            matches!(err, TripwireError::PathTraversal(_)),
+            "path traversal should be PathTraversal, got: {err:?}",
         );
     }
 

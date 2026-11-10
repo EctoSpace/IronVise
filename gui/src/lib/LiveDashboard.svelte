@@ -1,5 +1,5 @@
 <!--
-  LiveDashboard.svelte — Real-time SSE event feed + observer pop-out (Track 5).
+  LiveDashboard.svelte - real-time SSE event feed and observer pop-out.
 
   Features:
   • Server-Sent Events from /api/stream?token=<observerToken>
@@ -12,12 +12,11 @@
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { Badge, Card } from "./ui/index.js";
+  import { SSEConnection } from "./sse";
 
-  // ── Props ─────────────────────────────────────────────────────────────────
   interface Props { serverUrl: string; }
   let { serverUrl }: Props = $props();
 
-  // ── State ─────────────────────────────────────────────────────────────────
   interface LiveEvent {
     id: number;
     ts: string;
@@ -34,92 +33,81 @@
   let metrics    = $state<Record<string, unknown> | null>(null);
   let feedEl     = $state<HTMLElement | null>(null);
 
-  let sseSource: EventSource | null = null;
+  let sse: SSEConnection | null = null;
   let alive = true;
 
-  // ── Exponential back-off state ─────────────────────────────────────────────
-  // Starts at 2 s, doubles on each consecutive error, caps at 120 s.
-  // Resets to the initial value on a successful open.
-  const BACKOFF_INITIAL = 2_000;
-  const BACKOFF_MAX     = 120_000;
-  let backoffMs = BACKOFF_INITIAL;
-
-  // ── SSE connection ─────────────────────────────────────────────────────────
   async function connect() {
     if (!isTauri()) {
-      error = "Live Dashboard is only available in the EctoLedger desktop app.";
+      error = "Live Dashboard is only available in the IronVise desktop app.";
       return;
     }
     if (!serverUrl) return;
-    // Don't open a new connection while the tab is hidden — wait for visibility.
+    // Don't open a new connection while the tab is hidden - wait for visibility.
     if (document.hidden) return;
+
+    // Close any prior connection before creating a new one.
+    sse?.close();
+    sse = null;
 
     let token: string;
     try {
+      // Read-only (auditor-role) stream token - see commands::observer_token.
       token = await invoke<string>("observer_token");
     } catch (e) {
       error = `Could not retrieve observer token: ${e}`;
       return;
     }
 
-    const url = `${serverUrl}/api/stream?token=${encodeURIComponent(token)}`;
-    sseSource = new EventSource(url);
-
-    sseSource.onopen = () => {
-      if (!alive) return;
-      connected = true;
-      error = "";
-      backoffMs = BACKOFF_INITIAL; // reset on successful connection
-    };
-
-    sseSource.onerror = () => {
-      if (!alive) return;
-      connected = false;
-      const retryAfterSec = Math.round(backoffMs / 1_000);
-      error = `Stream disconnected — reconnecting in ${retryAfterSec} s…`;
-      sseSource?.close();
-      sseSource = null;
-      const delay = backoffMs;
-      backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX); // double for next failure
-      setTimeout(() => { if (alive && !document.hidden) connect(); }, delay);
-    };
-
-    sseSource.addEventListener("event", async (e: MessageEvent) => {
-      if (!alive) return;
-      let category = "event";
-      let data = e.data as string;
-      let isError = false;
-
-      try {
-        const parsed = JSON.parse(e.data as string) as Record<string, unknown>;
-        if (parsed.type) category = String(parsed.type);
-        if (parsed.error) { isError = true; category = "error"; data = String(parsed.error); }
-        else if (parsed.data) data = typeof parsed.data === "string" ? parsed.data : JSON.stringify(parsed.data, null, 2);
-        // refresh metrics on heartbeat
-        if (category === "heartbeat" || category === "metrics") {
-          loadMetrics();
-        }
-      } catch {
-        // raw string event
-      }
-
-      const ev: LiveEvent = {
-        id: ++eventCount,
-        ts: new Date().toLocaleTimeString(),
-        category,
-        data,
-        isError,
-      };
-      events = [...events.slice(-499), ev]; // keep last 500
-
-      if (!paused) {
-        await tick();
-        feedEl?.scrollTo({ top: feedEl.scrollHeight, behavior: "smooth" });
-      }
+    sse = new SSEConnection({
+      url: `${serverUrl}/api/stream?token=${encodeURIComponent(token)}`,
+      shouldConnect: () => alive && !document.hidden,
+      onOpen: () => {
+        connected = true;
+        error = "";
+      },
+      onReconnectScheduled: (delayMs) => {
+        connected = false;
+        error = `Stream disconnected - reconnecting in ${Math.round(delayMs / 1_000)} s…`;
+      },
+      events: { event: handleStreamEvent },
     });
+    sse.connect();
   }
 
-  // ── Metrics ────────────────────────────────────────────────────────────────
+  async function handleStreamEvent(e: MessageEvent) {
+    if (!alive) return;
+    let category = "event";
+    let data = e.data as string;
+    let isError = false;
+
+    try {
+      const parsed = JSON.parse(e.data as string) as Record<string, unknown>;
+      if (parsed.type) category = String(parsed.type);
+      if (parsed.error) { isError = true; category = "error"; data = String(parsed.error); }
+      else if (parsed.data) data = typeof parsed.data === "string" ? parsed.data : JSON.stringify(parsed.data, null, 2);
+      // refresh metrics on heartbeat
+      if (category === "heartbeat" || category === "metrics") {
+        loadMetrics();
+      }
+    } catch {
+      // raw string event
+    }
+
+    const ev: LiveEvent = {
+      id: ++eventCount,
+      ts: new Date().toLocaleTimeString(),
+      category,
+      data,
+      isError,
+    };
+    events = [...events.slice(-499), ev]; // keep last 500
+
+    if (!paused) {
+      await tick();
+      feedEl?.scrollTo({ top: feedEl.scrollHeight, behavior: "smooth" });
+    }
+  }
+
   async function loadMetrics() {
     try {
       const data = await invoke<unknown>("get_metrics");
@@ -130,14 +118,14 @@
     } catch { /* non-fatal */ }
   }
 
-  // ── Pop-out observer ───────────────────────────────────────────────────────
-  async function popOut() {
+  // The token is deliberately NOT appended to the URL: query strings leak into
+  // Referrer headers, server logs, and the DOM. The observer page prompts for
+  // a token itself when it needs one.
+  function popOut() {
     try {
-      const token = await invoke<string>("observer_token");
-      const observerUrl = `${serverUrl}/?token=${encodeURIComponent(token)}`;
       new WebviewWindow("observer", {
-        url: observerUrl,
-        title: "EctoLedger Observer",
+        url: serverUrl,
+        title: "IronVise Observer",
         width: 900,
         height: 640,
         resizable: true,
@@ -148,22 +136,19 @@
     }
   }
 
-  // ── Visibility-aware reconnect ────────────────────────────────────────────
   function onVisibilityChange() {
     if (!alive) return;
-    if (!document.hidden && !sseSource) {
-      // Tab came back into view and the connection is dead — reconnect immediately.
-      backoffMs = BACKOFF_INITIAL;
-      connect();
-    } else if (document.hidden && sseSource) {
-      // Tab hidden — close connection to save resources; will reopen on visibility.
-      sseSource.close();
-      sseSource = null;
+    if (!document.hidden) {
+      // Tab came back into view - reconnect immediately with reset backoff.
+      if (sse) sse.reconnectNow();
+      else connect();
+    } else {
+      // Tab hidden - close connection to save resources; will reopen on visibility.
+      sse?.suspend();
       connected = false;
     }
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
   onMount(() => {
     document.addEventListener("visibilitychange", onVisibilityChange);
     connect();
@@ -173,18 +158,17 @@
   onDestroy(() => {
     alive = false;
     document.removeEventListener("visibilitychange", onVisibilityChange);
-    sseSource?.close();
-    sseSource = null;
+    sse?.close();
+    sse = null;
   });
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   function categoryColor(cat: string): string {
     if (cat === "error") return "text-danger";
     if (cat === "warning") return "text-warning";
     if (cat === "heartbeat") return "text-text-muted";
-    if (cat === "action") return "text-blue-400";
-    if (cat === "tripwire") return "text-red-400";
-    if (cat === "chat_message" || cat === "chat") return "text-yellow-400";
+    if (cat === "action") return "text-accent-text";
+    if (cat === "tripwire") return "text-danger-text";
+    if (cat === "chat_message" || cat === "chat") return "text-warning";
     return "text-text-secondary";
   }
 

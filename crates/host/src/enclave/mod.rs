@@ -6,6 +6,9 @@ pub mod software;
 #[cfg(feature = "enclave")]
 pub mod ipc;
 
+#[cfg(feature = "enclave-remote")]
+pub mod nitro_attestation;
+
 #[cfg(all(
     feature = "sandbox-apple-enclave",
     target_os = "macos",

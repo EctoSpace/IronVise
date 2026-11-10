@@ -1,4 +1,19 @@
-# EctoLedger — Docker Demo (pre-built image)
+# ═══════════════════════════════════════════════════════════════════════════
+#  DEMO ONLY - semantic guard disabled, dev mode on, bound to all interfaces.
+#  NOT a production configuration.
+#
+#  This stack deliberately trades security for a zero-friction first run:
+#    • GUARD_REQUIRED=false  - the dual-LLM semantic guard never runs
+#    • ECTO_DEV_MODE=true    - default dev database credentials are accepted
+#    • ECTO_BIND_HOST=0.0.0.0 (image default) - the dashboard listens on every
+#      interface, and the published port 3000 is reachable from your network
+#    • Postgres uses the well-known ectoledger/ectoledger credentials
+#
+#  For a hardened run see docs/getting-started/running-securely.md.
+#  The server also logs a WARN banner at startup whenever it is in this state.
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# IronVise - Docker Demo (pre-built image)
 #
 # Usage:
 #   docker compose -f docker-compose.demo.yml up
@@ -6,7 +21,10 @@
 # Then open http://localhost:3000 in your browser.
 # Press Ctrl+C to stop.  Run `docker compose -f docker-compose.demo.yml down -v` to clean up.
 #
-# To build from source instead of pulling the pre-built image:
+# NOTE: this pulls the pre-built image ghcr.io/ectospace/ironvise:latest,
+# which is published only when a release tag is built - so it can lag the
+# source tree you just cloned (check GET /api/status for its version). To run
+# the code in THIS checkout, build from source instead:
 #   docker compose -f docker-compose.demo.yml -f docker-compose.build.yml up --build
 
 services:
@@ -31,7 +49,11 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags >/dev/null"]
+      # Use the bundled `ollama` client, NOT curl: the ollama/ollama image
+      # ships no curl, so a curl-based probe fails with exit 127 ("curl: not
+      # found") even while the server is perfectly healthy - which left the
+      # container permanently unhealthy and blocked every dependent service.
+      test: ["CMD", "ollama", "list"]
       interval: 3s
       timeout: 5s
       retries: 30
@@ -46,9 +68,9 @@ services:
     entrypoint: >
       sh -c 'curl -sf http://ollama:11434/api/pull -d "{\"name\":\"qwen2.5:0.5b\"}" && echo "Model ready."'
 
-  # ── EctoLedger (pre-built from GHCR) ─────────────────────────────
-  ectoledger:
-    image: ghcr.io/ectospace/ectoledger:latest
+  # ── IronVise (pre-built from GHCR) ─────────────────────────────
+  ironvise:
+    image: ghcr.io/ectospace/ironvise:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,11 +81,27 @@ services:
       LLM_BACKEND: ollama
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: qwen2.5:0.5b
+      # DEMO ONLY - see the banner at the top of this file. These weaken
+      # security and must not be carried into a real deployment.
       GUARD_REQUIRED: "false"
       ECTO_DEV_MODE: "true"
+      # Deliberately NOT setting ECTO_DEMO_MODE: that flag is not a display
+      # toggle - it makes the binary ignore DATABASE_URL and start its own
+      # embedded PostgreSQL on port 5433, which cannot work in this container
+      # (pg-embed has no binaries to extract) and would bypass the postgres
+      # service below. /api/status therefore reports demo_mode:false here,
+      # which is correct: this stack runs a real PostgreSQL.
+      # insecure_demo on that same endpoint is true, and matches the
+      # INSECURE DEMO MODE banner (guard off, dev mode on).
       RUST_LOG: info
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "ironvise", "health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
 volumes:
   pgdata:

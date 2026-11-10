@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EctoLedger — Observer</title>
+  <title>IronVise - Observer</title>
   <style>
     /* ── Reset & Base ─────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -81,7 +81,7 @@
     }
     .metrics-link:hover { background: #21262d; }
 
-    /* ── Sidebar — Session List ───────────────────────────────────── */
+    /* ── Sidebar - Session List ───────────────────────────────────── */
     .sidebar {
       grid-row: 2;
       display: flex;
@@ -184,7 +184,7 @@
       font-size: 12px;
     }
 
-    /* ── Main — Event Timeline ────────────────────────────────────── */
+    /* ── Main - Event Timeline ────────────────────────────────────── */
     .main {
       grid-row: 2;
       display: flex;
@@ -432,7 +432,7 @@
 <body>
   <!-- ── Header ──────────────────────────────────────────────────── -->
   <header class="header">
-    <h1>EctoLedger — Observer</h1>
+    <h1>IronVise - Observer</h1>
     <div class="header-status">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text">Initialising…</span>
@@ -506,8 +506,17 @@
       return base + sep + 'token=' + encodeURIComponent(_token);
     }
 
-    // Accept token from Tauri parent frame via postMessage.
+    // Accept token from the Tauri webview that embeds or opened this page via
+    // postMessage. Tauri serves its UI from these origins per platform.
+    var TOKEN_ORIGINS = [
+      'tauri://localhost',
+      'http://tauri.localhost',
+      'https://tauri.localhost',
+      window.location.origin
+    ];
     window.addEventListener('message', function (e) {
+      var fromOpenerFrame = e.source && (e.source === window.parent || e.source === window.opener);
+      if (!fromOpenerFrame || TOKEN_ORIGINS.indexOf(e.origin) === -1) return;
       if (e.data && e.data.type === 'ectoledgerSetToken' && typeof e.data.token === 'string') {
         _token = e.data.token;
         metricsLink.href = authQuery('/metrics');
@@ -553,7 +562,7 @@
       try { return new Date(iso).toLocaleString(); } catch (_) { return iso; }
     }
     function shortHash(h) {
-      return h ? h.substring(0, 8) : '—';
+      return h ? h.substring(0, 8) : '-';
     }
     function sevClass(s) {
       s = (s || '').toLowerCase();
@@ -618,7 +627,7 @@
       var t = payload.type;
       var order = FIELD_ORDER[t];
       if (!order) {
-        // Unknown type — fall back to alphabetical (may not match)
+        // Unknown type - fall back to alphabetical (may not match)
         return canonicalValue(payload);
       }
       var skips = SKIP_IF_NONE[t] || {};
@@ -656,7 +665,7 @@
       renderMain();
 
       try {
-        var resp = await fetch(authQuery('/api/events?session_id=' + encodeURIComponent(activeSessionId)), {
+        var resp = await fetch('/api/events?session_id=' + encodeURIComponent(activeSessionId), {
           headers: authHeaders()
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -701,7 +710,7 @@
 
     /* ── API: Load sessions ──────────────────────────────────────── */
     function loadSessions() {
-      fetch(authQuery('/api/sessions'), { headers: authHeaders() })
+      fetch('/api/sessions', { headers: authHeaders() })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
@@ -735,7 +744,7 @@
       // Show loading state instead of rendering empty detail header (prevents blink)
       mainEl.innerHTML = '<div class="main-empty">Loading events\u2026</div>';
 
-      fetch(authQuery('/api/events?session_id=' + encodeURIComponent(sessionId)), { headers: authHeaders() })
+      fetch('/api/events?session_id=' + encodeURIComponent(sessionId), { headers: authHeaders() })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
@@ -816,7 +825,7 @@
             // Detect session-level events
             var pt = data.payload.type;
             if (pt === 'genesis' || pt === 'prompt_input') {
-              // Might be a new session — refresh session list
+              // Might be a new session - refresh session list
               refreshSessionsQuietly();
             }
           }
@@ -840,7 +849,7 @@
       if (refreshTimer) return;
       refreshTimer = setTimeout(function () {
         refreshTimer = null;
-        fetch(authQuery('/api/sessions'), { headers: authHeaders() })
+        fetch('/api/sessions', { headers: authHeaders() })
           .then(function (r) { return r.ok ? r.json() : []; })
           .then(function (list) {
             sessions = (list || []).sort(function (a, b) {
@@ -1075,8 +1084,40 @@
     // When opened directly with ?token=, start immediately.
     // When embedded in an iframe (no token yet), defer until
     // the parent delivers the token via postMessage to prevent 401.
+    // When opened directly WITHOUT a token (e.g. the GUI pop-out no longer
+    // appends one to the URL, to keep it out of logs/Referrer headers),
+    // prompt for it.
     if (_token) {
       loadSessions();
+    } else if (window.self === window.top) {
+      // Minimal inline token bar (window.prompt is unreliable in webviews).
+      var _bar = document.createElement('div');
+      _bar.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#161b22;border-bottom:1px solid #30363d;padding:10px 14px;display:flex;gap:8px;z-index:999;align-items:center';
+      var _lbl = document.createElement('span');
+      _lbl.textContent = 'API token:';
+      _lbl.style.cssText = 'color:#c9d1d9;font-size:13px;white-space:nowrap';
+      var _inp = document.createElement('input');
+      _inp.type = 'password';
+      _inp.placeholder = 'Paste your IronVise API token (printed at server startup)';
+      _inp.style.cssText = 'flex:1;max-width:460px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px';
+      var _btn = document.createElement('button');
+      _btn.textContent = 'Connect';
+      _btn.style.cssText = 'background:#238636;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer';
+      var _go = function () {
+        var t = _inp.value.trim();
+        if (!t) return;
+        _token = t;
+        metricsLink.href = authQuery('/metrics');
+        _bar.remove();
+        loadSessions();
+      };
+      _btn.addEventListener('click', _go);
+      _inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') _go(); });
+      _bar.appendChild(_lbl);
+      _bar.appendChild(_inp);
+      _bar.appendChild(_btn);
+      document.body.appendChild(_bar);
+      _inp.focus();
     }
 
   })();

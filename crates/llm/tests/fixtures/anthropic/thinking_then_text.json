@@ -1,0 +1,23 @@
+{
+  "id": "msg_01ReplayThinkingThenText",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "The goal is to audit server_config.txt. The first useful step is to read that file so later findings can cite its contents.",
+      "signature": "EqoBCkgIARABGAIiQkDUMMY_SIGNATURE_NOT_A_SECRET_FOR_FIXTURE_REPLAY_ONLY"
+    },
+    {
+      "type": "text",
+      "text": "{\"action\":\"read_file\",\"params\":{\"path\":\"server_config.txt\"},\"justification\":\"Need to inspect server configuration for audit findings.\",\"reasoning\":\"The goal is to audit server_config.txt, so reading it is the first logical step.\"}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 412,
+    "output_tokens": 96
+  }
+}

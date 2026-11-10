@@ -1,4 +1,4 @@
-# Build override — compile EctoLedger from source instead of pulling from GHCR.
+# Build override - compile IronVise from source instead of pulling from GHCR.
 #
 # Usage:
 #   docker compose -f docker-compose.demo.yml -f docker-compose.build.yml up --build
@@ -6,8 +6,11 @@
 # First build takes ~5-10 min (Rust compile). Subsequent builds use Docker layer cache.
 
 services:
-  ectoledger:
-    image: ectoledger:local
+  ironvise:
+    image: ironvise:local
     build:
       context: .
       dockerfile: Dockerfile
+      # BuildKit otherwise records the source repository URL in the manifest.
+      provenance: false
+      sbom: false

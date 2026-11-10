@@ -1,15 +1,15 @@
 // Multi-agent orchestrator: runs three sequential sub-agents (Recon → Analysis → Verify)
 // each in their own ledger session, then commits a CrossLedgerSeal event to every session.
 //
-// The cross-ledger seal hash is sha256(len(recon_tip) ‖ recon_tip ‖ len(analysis_tip) ‖ …) —
+// The cross-ledger seal hash is sha256(len(recon_tip) ‖ recon_tip ‖ len(analysis_tip) ‖ …) -
 // a length-prefixed commitment binding all three ledgers together without merging their chains.
 // Length prefixes prevent boundary-collision attacks where sha256("AB"‖"C") == sha256("A"‖"BC").
 //
 // Per-role policy overrides:
-//   ECTO_RECON_POLICY=/path/to/recon.toml    — overrides built-in recon policy
-//   ECTO_ANALYSIS_POLICY=/path/to/...toml    — overrides built-in analysis policy
-//   ECTO_VERIFY_POLICY=/path/to/...toml      — overrides built-in verify policy
-//   --policy /path/to/shared.toml               — fallback shared policy for all roles
+//   ECTO_RECON_POLICY=/path/to/recon.toml    - overrides built-in recon policy
+//   ECTO_ANALYSIS_POLICY=/path/to/...toml    - overrides built-in analysis policy
+//   ECTO_VERIFY_POLICY=/path/to/...toml      - overrides built-in verify policy
+//   --policy /path/to/shared.toml               - fallback shared policy for all roles
 
 use crate::agent::{self, AgentError, AgentLoopConfig};
 use crate::ledger;
@@ -22,8 +22,6 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
-
-// ── Role definitions ───────────────────────────────────────────────────────────
 
 /// The specialisation of a sub-agent within an orchestrated run.
 #[derive(Clone, Debug)]
@@ -135,7 +133,7 @@ mod tests {
 
     #[test]
     fn seal_hash_is_length_prefix_collision_resistant() {
-        // Without length prefixes sha256("AB"||"C") == sha256("A"||"BC") — this must not happen.
+        // Without length prefixes sha256("AB"||"C") == sha256("A"||"BC") - this must not happen.
         let h1 = compute_seal_hash("AB", "C", "X");
         let h2 = compute_seal_hash("A", "BC", "X");
         assert_ne!(
@@ -155,8 +153,6 @@ mod tests {
     }
 }
 
-// ── Configuration ──────────────────────────────────────────────────────────────
-
 pub struct OrchestratorConfig {
     pub goal: String,
     /// Optional shared policy file path (applied on top of per-role defaults).
@@ -164,8 +160,6 @@ pub struct OrchestratorConfig {
     /// Maximum steps per sub-agent (overrides per-role policy max_steps if set).
     pub max_steps_per_agent: Option<u32>,
 }
-
-// ── Result ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct OrchestrationResult {
@@ -175,8 +169,6 @@ pub struct OrchestrationResult {
     /// sha256(recon_tip || analysis_tip || verify_tip)
     pub seal_hash: String,
 }
-
-// ── Errors ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
@@ -196,12 +188,10 @@ pub enum OrchestratorError {
     PolicyIo(String),
 }
 
-// ── Implementation ─────────────────────────────────────────────────────────────
-
 /// Runs a three-stage orchestrated audit:
-/// 1. Recon agent — collects raw observations.
-/// 2. Analysis agent — processes recon output into findings.
-/// 3. Verify agent — independently confirms findings.
+/// 1. Recon agent - collects raw observations.
+/// 2. Analysis agent - processes recon output into findings.
+/// 3. Verify agent - independently confirms findings.
 ///
 /// Each stage runs in its own ledger session. On completion, a `CrossLedgerSeal`
 /// event is appended to every session tying them together.
@@ -210,10 +200,10 @@ pub async fn run_orchestration(
     client: &Client,
     config: OrchestratorConfig,
 ) -> Result<OrchestrationResult, OrchestratorError> {
-    let llm_backend_name = crate::config::llm_backend();
+    let llm_backend_name = crate::config::llm_provider();
     let llm_model = crate::config::ollama_model();
 
-    // ── Stage 1: Recon ─────────────────────────────────────────────────────────
+    // Stage 1: Recon.
     println!("[Orchestrator] Starting RECON agent…");
     let recon_id = run_role_agent(
         pool,
@@ -248,7 +238,7 @@ pub async fn run_orchestration(
         .collect::<Vec<_>>()
         .join("\n---\n");
 
-    // ── Stage 2: Analysis ─────────────────────────────────────────────────────
+    // Stage 2: Analysis.
     println!("[Orchestrator] Starting ANALYSIS agent…");
     let analysis_goal = format!(
         "Analyse the following recon observations collected during the audit of \"{goal}\".\n\
@@ -289,7 +279,7 @@ pub async fn run_orchestration(
         .collect::<Vec<_>>()
         .join("\n---\n");
 
-    // ── Stage 3: Verify ───────────────────────────────────────────────────────
+    // Stage 3: Verify.
     println!("[Orchestrator] Starting VERIFY agent…");
     let verify_goal = format!(
         "Independently verify the following security findings for \"{goal}\".\n\
@@ -318,7 +308,7 @@ pub async fn run_orchestration(
         .map(|e| e.content_hash.clone())
         .ok_or_else(|| OrchestratorError::NoEvents(AgentRole::Verify))?;
 
-    // ── Cross-ledger seal ─────────────────────────────────────────────────────
+    // Cross-ledger seal.
     let seal_hash = compute_seal_hash(&recon_tip, &analysis_tip, &verify_tip);
     let session_ids = vec![recon_id, analysis_id, verify_id];
     let session_tips = vec![recon_tip, analysis_tip, verify_tip];
@@ -339,35 +329,10 @@ pub async fn run_orchestration(
         }
     }
 
-    println!("[Orchestrator] Cross-ledger seal: {}", seal_hash);
-    println!("[Orchestrator] Recon   session: {}", recon_id);
-    println!("[Orchestrator] Analysis session: {}", analysis_id);
-    println!("[Orchestrator] Verify  session: {}", verify_id);
-
-    // Attempt EVM anchoring of the cross-ledger seal hash.
-    // Gracefully skipped when EVM env vars are not set; non-fatal on RPC errors.
-    #[cfg(feature = "evm")]
-    {
-        match crate::evm_anchor::anchor_to_evm(&seal_hash).await {
-            Ok(result) => {
-                println!(
-                    "[Orchestrator] EVM anchor: tx {} on chain {} ({})",
-                    result.tx_hash, result.chain_id, result.rpc_url
-                );
-            }
-            Err(crate::evm_anchor::EvmAnchorError::MissingConfig(_)) => {
-                // EVM_RPC_URL / EVM_CONTRACT_ADDRESS / EVM_PRIVATE_KEY not set — skip silently.
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "[Orchestrator] EVM anchoring failed (non-fatal): {}. \
-                     Set EVM_RPC_URL, EVM_CHAIN_ID, EVM_CONTRACT_ADDRESS, and EVM_PRIVATE_KEY \
-                     to enable on-chain seal anchoring.",
-                    e
-                );
-            }
-        }
-    }
+    println!("[Orchestrator] Cross-ledger seal: {seal_hash}");
+    println!("[Orchestrator] Recon   session: {recon_id}");
+    println!("[Orchestrator] Analysis session: {analysis_id}");
+    println!("[Orchestrator] Verify  session: {verify_id}");
 
     Ok(OrchestrationResult {
         recon_session_id: recon_id,
@@ -376,8 +341,6 @@ pub async fn run_orchestration(
         seal_hash,
     })
 }
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
 
 async fn run_role_agent(
     pool: &DatabasePool,
@@ -402,7 +365,7 @@ async fn run_role_agent(
             path
         );
         std::fs::read_to_string(&path)
-            .map_err(|e| OrchestratorError::PolicyIo(format!("{}: {}", path, e)))?
+            .map_err(|e| OrchestratorError::PolicyIo(format!("{path}: {e}")))?
     } else if let Some(ref policy_path) = config.policy {
         tracing::info!(
             "[Orchestrator] {} using shared --policy file: {}",
@@ -432,7 +395,7 @@ async fn run_role_agent(
     // Bootstrap genesis for this sub-session.
     // Include the session's verifying key in the payload so this genesis event
     // is cryptographically bound to the signing key and cannot be replayed
-    // into a different session that uses a different key (TM-2c).
+    // into a different session that uses a different key.
     let genesis_msg = format!("[{}] {}", role.name(), goal);
     let genesis_session_pk = hex::encode(signing_key_arc.verifying_key().to_bytes());
     pool.append_event(
@@ -449,7 +412,7 @@ async fn run_role_agent(
     .map_err(|e| {
         OrchestratorError::Db(match e {
             ledger::AppendError::Db(d) => d,
-            other => sqlx::Error::Protocol(format!("append genesis: {}", other)),
+            other => sqlx::Error::Protocol(format!("append genesis: {other}")),
         })
     })?;
 
@@ -488,7 +451,7 @@ async fn run_role_agent(
     };
 
     // run_cognitive_loop now accepts &DatabasePool directly.
-    // It internally requires PostgreSQL; SQLite orchestration is not yet supported.
+    // It internally requires PostgreSQL; SQLite orchestration is not supported.
     match agent::run_cognitive_loop(pool, client, loop_config).await {
         Ok(()) => {
             pool.finish_session(session_id, "completed")

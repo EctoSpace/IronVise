@@ -1,6 +1,6 @@
 <!--
-  Select — accessible dropdown built on the native <select> element.
-  Styled to match the EctoLedger design system.
+  Select - accessible dropdown built on the native <select> element.
+  Styled to match the IronVise design system.
 -->
 <script lang="ts">
   interface Option {
@@ -38,7 +38,7 @@
 <select
   {id}
   {disabled}
-  class="bg-surface-elevated/40 border border-border-muted/40 rounded-xl h-11 px-5 py-2 text-sm text-text-primary
+  class="bg-surface-elevated border border-border-muted rounded-xl h-11 px-5 py-2 text-sm text-text-primary
          focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200 disabled:opacity-50
          disabled:cursor-not-allowed {cls}"
   value={value}

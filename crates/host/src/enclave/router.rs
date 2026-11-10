@@ -75,13 +75,17 @@ pub fn select_enclave(config: &EnclaveConfig) -> Box<dyn EnclaveRuntime> {
                 return Box::new(RemoteEnclaveRuntime::new_with_url(url.clone()));
             }
 
+            // Exactly one of these two blocks survives cfg expansion, and it is
+            // the tail expression of the arm. No `return`: under the Apple cfg
+            // the other block is gone, so a `return` here would be returning
+            // from the last statement in the function.
             #[cfg(all(
                 feature = "sandbox-apple-enclave",
                 target_os = "macos",
                 target_arch = "aarch64"
             ))]
             {
-                return Box::new(crate::enclave::apple_hv::AppleHvEnclaveRuntime::new());
+                Box::new(crate::enclave::apple_hv::AppleHvEnclaveRuntime::new())
             }
 
             #[cfg(not(all(

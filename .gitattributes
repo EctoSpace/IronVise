@@ -1,0 +1,47 @@
+# SQLx hashes migration files byte-for-byte. Keep migrations on LF on every
+# platform so Git's core.autocrlf setting cannot make an applied migration look
+# modified on Windows. v0.6.3 had no such rule, so a Windows build of that tag
+# may have recorded CRLF checksums; startup rewrites only that line-ending
+# difference. The bytes that tag shipped are pinned in
+# crates/host/migrations/V063_CHECKSUMS.json. scripts/check-migration-checksums.py
+# fails if a pinned file changes. Put later schema changes in a new file.
+*.sql text eol=lf
+
+# Shell scripts must stay LF or they do not run at all off Windows: with Git for
+# Windows' default core.autocrlf=true a checked-out `.sh` gets CRLF, and bash
+# reports `$'\r': command not found` on the first line. That breaks
+# scripts/test-integration.sh, the demo scripts, and `make demo-hook` for anyone
+# running them from WSL, Git Bash, Linux, or macOS.
+*.sh text eol=lf
+
+# Cross-language fixtures are compared byte for byte: the webhook test fails
+# when sdk/fixtures/webhook-v1.json differs from what the server writes, and a
+# Windows checkout with core.autocrlf would give it CRLF.
+sdk/fixtures/*.json text eol=lf
+
+# The agent-loop golden file is compared as text against what the loop writes.
+crates/host/tests/fixtures/*.json text eol=lf
+
+# Certificates are evidence people hash and compare, and the verifier page
+# embeds the sample certificates and checks them against these files byte for
+# byte, so a CRLF checkout on Windows must not rewrite either.
+*.elc text eol=lf
+site/verify-bundle.js text eol=lf
+
+# `git archive` drops these paths from a published export.
+doNotPublish/ export-ignore
+BeforeYouPublishZeroEight.md export-ignore
+CLAUDE.md export-ignore
+AGENTS.md export-ignore
+crates/host/tests/private_docs_location.rs export-ignore
+
+# Runner workflows that are not part of the published tree.
+.github/workflows/macLocal.yml export-ignore
+.github/workflows/ubuntuLocal.yml export-ignore
+.github/workflows/winLocal.yml export-ignore
+
+# Tauri rewrites these schemas as LF. Without this rule, a Windows checkout
+# with core.autocrlf=true checks them out as CRLF. The next build writes LF
+# again, and git then reports desktop-schema.json and windows-schema.json
+# as modified even though the text is unchanged.
+gui/src-tauri/gen/schemas/*.json text eol=lf

@@ -1,32 +1,37 @@
 [workspace.package]
-version = "0.6.3"
+version = "0.8.0"
 edition = "2024"
 authors = ["Björn Roman Kohlberger"]
-license = "Apache-2.0"
+# Client SDKs under sdk/ are separately licensed under Apache-2.0.
+license = "BUSL-1.1"
 
 [workspace]
 members = [
     "crates/compliance",
     "crates/core",
+    "crates/elc",
+    "crates/elc-wasm",
     "crates/host",
     "crates/ledger-api",
     "crates/llm",
     "crates/sandbox",
     "gui/src-tauri",
 ]
-# crates/guest targets riscv32im-succinct-zkvm-elf and must not be compiled for
-# the host architecture.  It is built exclusively by the host's build.rs via
-# sp1_build when the `zk` feature is enabled.
+# crates/guest retains the experimental RISC-V proof program as reference source.
+# SP1 proving is unavailable in 0.8 due to RUSTSEC-2026-0387; the guest is not
+# built or linked into the host.
 # crates/guard_unikernel targets aarch64-unknown-none and must not be compiled for
 # the host architecture. It is built exclusively by the host's build.rs when the
 # `sandbox-apple-enclave` feature is enabled.
-exclude = ["crates/guest", "crates/guard_unikernel"]
+# third_party/pg-embed is a patched copy of a crates.io dependency (see its
+# VENDORED.md), pulled in through [patch.crates-io] below.
+exclude = ["crates/guest", "crates/guard_unikernel", "third_party/pg-embed", "third_party/glib", "third_party/sqlx-sqlite"]
 resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2          = "0.10"
+sha2          = "0.11"
 hex           = "0.4"
 bincode       = "1"
 tracing       = "0.1"
@@ -34,15 +39,27 @@ uuid          = { version = "1", features = ["v4", "serde"] }
 chrono        = { version = "0.4", features = ["serde"] }
 toml          = "0.8"
 url           = "2"
-ipnetwork     = "0.20"
+ipnetwork     = "0.21"
 regex-lite    = "0.1"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-thiserror     = "1"
+ed25519-dalek = { version = "3", features = ["rand_core"] }
+thiserror     = "2"
 async-trait   = "0.1"
 ledger-api    = { path = "crates/ledger-api" }
 ectoledger-sandbox    = { path = "crates/sandbox" }
 ectoledger-llm        = { path = "crates/llm" }
 ectoledger-compliance = { path = "crates/compliance" }
+# Test and benchmark tooling, dev-dependencies only.
+proptest      = "1.12"
+criterion     = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+# pg-embed 1.0.0 (latest) requires zip 8, which carries RUSTSEC-2026-0367/0368/0369.
+# The vendored copy differs only in depending on zip 9; see third_party/pg-embed/VENDORED.md.
+[patch.crates-io]
+pg-embed = { path = "third_party/pg-embed" }
+# RUSTSEC-2024-0429 backport; see third_party/glib/VENDORED.md.
+glib = { path = "third_party/glib" }
+# RUSTSEC-2026-0459: lets sqlx use the fixed libsqlite3-sys; see third_party/sqlx-sqlite/VENDORED.md.
+sqlx-sqlite = { path = "third_party/sqlx-sqlite" }
 
 # tailored profiles originally specified in gui/src-tauri/Cargo.toml;
 # moved to the workspace root to avoid warnings when building individual
@@ -55,3 +72,9 @@ codegen-units = 4
 lto           = "thin"
 opt-level     = "s"
 strip         = true
+
+# Build scripts and proc macros run on the build machine and are never shipped.
+# Stripping them made macOS 27's dyld refuse to load sqlx's macros ("mis-aligned
+# LINKEDIT string pool"), so every release build failed there.
+[profile.release.build-override]
+strip = false

@@ -1,0 +1,28 @@
+[package]
+name = "ectoledger-elc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "The IronVise audit certificate (.elc) format and its offline verifier, with no database, network or async runtime"
+license.workspace = true
+
+# Everything here must build for wasm32-unknown-unknown: the browser verifier
+# (crates/elc-wasm) compiles this crate as-is. No I/O, no tokio, no sqlx, no
+# randomness. uuid is declared without v4 on purpose, since v4 would pull in
+# getrandom, which has no wasm32-unknown-unknown backend without extra glue.
+
+[dependencies]
+ectoledger_core = { path = "../core" }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+sha2            = { workspace = true }
+hex             = { workspace = true }
+uuid            = { version = "1", default-features = false, features = ["std", "serde"] }
+ed25519-dalek   = { version = "3" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "verify"
+harness = false

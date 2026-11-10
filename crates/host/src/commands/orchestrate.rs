@@ -1,4 +1,4 @@
-//! `ectoledger orchestrate`, `ectoledger diff-audit`, `ectoledger red-team`
+//! `ironvise orchestrate`, `ironvise diff-audit`, `ironvise red-team`
 
 use uuid::Uuid;
 
@@ -12,17 +12,17 @@ pub async fn run_orchestrate(
     use crate::orchestrator::{OrchestratorConfig, run_orchestration};
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(
+            crate::config::llm_timeout_secs(),
+        ))
         .build()?;
 
     // One-time startup recovery: clean up zombies from prior server runs.
-    if let Some(pg) = pool.as_pg() {
-        if let Err(e) = crate::wakeup::recover_zombie_sessions(pg).await {
-            tracing::warn!("orchestrate startup: failed to recover zombie sessions: {e}");
-        }
-        if let Err(e) = crate::wakeup::recover_incomplete_actions(pg).await {
-            tracing::warn!("orchestrate startup: failed to recover incomplete actions: {e}");
-        }
+    if let Err(e) = crate::wakeup::recover_zombie_sessions(pool).await {
+        tracing::warn!("orchestrate startup: failed to recover zombie sessions: {e}");
+    }
+    if let Err(e) = crate::wakeup::recover_incomplete_actions(pool).await {
+        tracing::warn!("orchestrate startup: failed to recover incomplete actions: {e}");
     }
 
     let orch_config = OrchestratorConfig {
@@ -53,7 +53,7 @@ pub async fn run_orchestrate(
             );
             Ok(())
         }
-        Err(e) => Err(format!("Orchestration failed: {}", e).into()),
+        Err(e) => Err(format!("Orchestration failed: {e}").into()),
     }
 }
 
@@ -83,7 +83,7 @@ pub async fn run_diff_audit(
         })?;
         println!("Diff summary written to {}", path.display());
     } else {
-        print!("{}", out);
+        print!("{out}");
     }
     Ok(())
 }
@@ -106,7 +106,7 @@ pub async fn run_red_team(
             std::io::Error::other(e.to_string())
         })?;
 
-    println!("{}", report);
+    println!("{report}");
 
     if let Some(path) = output {
         let json = serde_json::to_string_pretty(&report).map_err(|e| {
@@ -120,10 +120,9 @@ pub async fn run_red_team(
         println!("Report written to {}", path.display());
     }
 
-    // Return error if any payload passed all defense layers.
     if report.passed_all > 0 {
         return Err(format!(
-            "\n⚠  {} injection(s) passed all defense layers — review required.",
+            "\n⚠  {} injection(s) passed all defense layers - review required.",
             report.passed_all
         )
         .into());

@@ -1,20 +1,56 @@
 /**
- * EctoLedgerClient — Vitest test suite.
+ * IronViseClient - Vitest test suite.
  *
  * All HTTP calls are intercepted by spying on `globalThis.fetch` so no live
  * server is required.  Each test asserts both the correct request URL / method
  * and the correct parsing / propagation of the mock response.
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
-import { EctoLedgerApiError, EctoLedgerClient } from "./client.js";
-import type { PendingApproval, SecurityMetrics } from "./models.js";
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
+import { IronViseApiError, IronViseClient } from "./client.js";
+import type { ComplianceBundle, LedgerEvent, PendingApproval, SecurityMetrics } from "./models.js";
 
 const BASE_URL = "http://localhost:3000";
 const SESSION_ID = "550e8400-e29b-41d4-a716-446655440000";
+
+/**
+ * Response bodies shaped exactly as the Rust server sends them
+ * (`get_events_json` in server/exports.rs, `prove_compliance_for_session` in
+ * pool.rs). The Python suite reads the same files.
+ */
+const serverResponse = <T>(name: string): T =>
+  JSON.parse(
+    readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../../fixtures/server-responses", name),
+      "utf8",
+    ),
+  );
+const SERVER_EVENTS = serverResponse<LedgerEvent[]>("events.json");
+const SERVER_COMPLIANCE = serverResponse<ComplianceBundle>("compliance.json");
+
+/** Exhaustive by construction: a field added to or dropped from a type stops these compiling. */
+const LEDGER_EVENT_KEYS: Record<keyof LedgerEvent, true> = {
+  id: true,
+  sequence: true,
+  previous_hash: true,
+  content_hash: true,
+  payload: true,
+  created_at: true,
+};
+const COMPLIANCE_KEYS: Record<keyof ComplianceBundle, true> = {
+  session_id: true,
+  event_count: true,
+  events: true,
+};
+const COMPLIANCE_EVENT_KEYS: Record<keyof ComplianceBundle["events"][number], true> = {
+  sequence: true,
+  content_hash: true,
+};
+const keysOf = (o: object): string[] => Object.keys(o).sort();
 
 /** Build a minimal fetch Response mock that returns JSON. */
 function jsonResponse(body: unknown, status = 200): Response {
@@ -55,18 +91,6 @@ const SAMPLE_SESSION = {
   enclave_attestation_json: null,
 };
 
-const SAMPLE_EVENT = {
-  id: 1,
-  session_id: SESSION_ID,
-  payload: { step: "read" },
-  payload_hash: "deadbeef",
-  prev_hash: null,
-  sequence: 1,
-  created_at: "2026-02-24T00:00:01Z",
-  public_key: null,
-  signature: null,
-};
-
 const SAMPLE_APPEND = { id: 2, payload_hash: "cafebabe", sequence: 2 };
 
 const SAMPLE_METRICS = {
@@ -81,26 +105,25 @@ const SAMPLE_SECURITY_METRICS: SecurityMetrics = {
   chain_verification_failures: 0,
 };
 
-let client: EctoLedgerClient;
-let fetchSpy: MockInstance<[input: RequestInfo | URL, init?: RequestInit], Promise<Response>>;
+let client: IronViseClient;
+let fetchSpy: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
-  client = new EctoLedgerClient({ baseUrl: BASE_URL });
+  vi.restoreAllMocks();
+  client = new IronViseClient({ baseUrl: BASE_URL });
   fetchSpy = vi.spyOn(globalThis, "fetch");
 });
 
-// ── Constructor ──────────────────────────────────────────────────────────────
-
 describe("constructor", () => {
   it("strips trailing slash from baseUrl", async () => {
-    const c = new EctoLedgerClient({ baseUrl: "http://localhost:3000/" });
+    const c = new IronViseClient({ baseUrl: "http://localhost:3000/" });
     fetchSpy.mockResolvedValueOnce(jsonResponse([]));
     await c.listSessions();
     expect(fetchSpy.mock.calls[0][0]).toBe("http://localhost:3000/api/sessions?limit=50");
   });
 
   it("sets Authorization header when bearerToken is provided", async () => {
-    const c = new EctoLedgerClient({ baseUrl: BASE_URL, bearerToken: "tok-abc" });
+    const c = new IronViseClient({ baseUrl: BASE_URL, bearerToken: "tok-abc" });
     fetchSpy.mockResolvedValueOnce(jsonResponse([]));
     await c.listSessions();
     const init = fetchSpy.mock.calls[0][1] as RequestInit;
@@ -114,8 +137,6 @@ describe("constructor", () => {
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
   });
 });
-
-// ── Sessions ─────────────────────────────────────────────────────────────────
 
 describe("listSessions", () => {
   it("GET /api/sessions?limit=50 (default)", async () => {
@@ -141,9 +162,9 @@ describe("listSessions", () => {
     expect(url).toContain("status=completed");
   });
 
-  it("throws EctoLedgerApiError on 500", async () => {
+  it("throws IronViseApiError on 500", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "server error" }, 500));
-    await expect(client.listSessions()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.listSessions()).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -158,9 +179,27 @@ describe("createSession", () => {
     expect(session.id).toBe(SESSION_ID);
   });
 
-  it("throws EctoLedgerApiError on 422", async () => {
+  it("does not send record unless asked", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SAMPLE_SESSION, 201));
+    await client.createSession({ goal: "Test audit" });
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SAMPLE_SESSION, 201));
+    await client.createSession({ goal: "Test audit", record: false });
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual({ goal: "Test audit" });
+    }
+  });
+
+  it("sends record: true for a recorder session", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ...SAMPLE_SESSION, llm_backend: "sdk-recorder" }, 201));
+    const session = await client.createSession({ goal: "Test audit", record: true });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ goal: "Test audit", record: true });
+    expect(session.llm_backend).toBe("sdk-recorder");
+  });
+
+  it("throws IronViseApiError on 422", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "invalid" }, 422));
-    await expect(client.createSession({ goal: "" })).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.createSession({ goal: "" })).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -173,9 +212,9 @@ describe("getSessionById", () => {
     expect(session.goal).toBe("Summarize quarterly report");
   });
 
-  it("throws EctoLedgerApiError on 404", async () => {
+  it("throws IronViseApiError on 404", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "not found" }, 404));
-    await expect(client.getSessionById("nonexistent")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.getSessionById("nonexistent")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -189,14 +228,20 @@ describe("sealSession", () => {
   });
 });
 
-// ── Events ───────────────────────────────────────────────────────────────────
-
 describe("getEvents", () => {
   it("GET /api/events?session_id=:id", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse([SAMPLE_EVENT]));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SERVER_EVENTS));
     const events = await client.getEvents(SESSION_ID);
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/events?session_id=${SESSION_ID}`);
-    expect(events[0].sequence).toBe(1);
+    expect(events[1].sequence).toBe(1);
+  });
+
+  it("returns the server's rows as sent, hashes under the server's names", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SERVER_EVENTS));
+    const events: LedgerEvent[] = await client.getEvents(SESSION_ID);
+    expect(events).toEqual(SERVER_EVENTS);
+    expect(events[1].previous_hash).toBe(events[0].content_hash);
+    expect(keysOf(events[0])).toEqual(keysOf(LEDGER_EVENT_KEYS));
   });
 });
 
@@ -210,40 +255,101 @@ describe("appendEvent", () => {
     expect(result.sequence).toBe(2);
   });
 
-  it("throws EctoLedgerApiError on 400", async () => {
+  it("throws IronViseApiError on 400", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "bad payload" }, 400));
-    await expect(client.appendEvent(SESSION_ID, {})).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.appendEvent(SESSION_ID, {})).rejects.toBeInstanceOf(IronViseApiError);
+  });
+
+  it("surfaces the server's 409 for a session that is not running", async () => {
+    // The text of append_event_handler in server/sdk.rs, for a sealed session.
+    const message =
+      `session ${SESSION_ID} is completed: it is sealed, and an event appended now would make it ` +
+      'fail verification. To record a run, create the session with "record": true; it stays ' +
+      "open until you seal it.";
+    fetchSpy.mockResolvedValueOnce(textResponse(message, 409));
+    const err = await client.appendEvent(SESSION_ID, {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IronViseApiError);
+    expect((err as IronViseApiError).status).toBe(409);
+    expect((err as IronViseApiError).body).toBe(message);
+    expect((err as IronViseApiError).message).toContain(message);
   });
 });
 
-// ── Chain verification & compliance ──────────────────────────────────────────
+const SIGNATURES_OK = {
+  verified: true,
+  verdict: "verified",
+  message: "2 signed events verified",
+  signed: 2,
+  unsigned: 0,
+};
+
+const SIGNATURES_FAILED = {
+  verified: false,
+  verdict: "signature_mismatch",
+  message: "event 2 is not signed by the session key",
+  signed: 0,
+  unsigned: 0,
+};
 
 describe("verifyChain", () => {
   it("GET /api/sessions/:id/verify and returns boolean", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true, signatures: SIGNATURES_OK }));
     const ok = await client.verifyChain(SESSION_ID);
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/sessions/${SESSION_ID}/verify`);
     expect(ok).toBe(true);
   });
 
   it("returns false when server says not ok", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: false, signatures: SIGNATURES_OK }));
+    expect(await client.verifyChain(SESSION_ID)).toBe(false);
+  });
+
+  it("returns false when the chain links but the signatures fail", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true, signatures: SIGNATURES_FAILED }));
+    expect(await client.verifyChain(SESSION_ID)).toBe(false);
+  });
+
+  it("trusts ok alone when an older server sends no signatures", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    expect(await client.verifyChain(SESSION_ID)).toBe(true);
     fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: false }));
     expect(await client.verifyChain(SESSION_ID)).toBe(false);
   });
 });
 
+describe("verifySession", () => {
+  it("GET /api/sessions/:id/verify and returns the full verdict", async () => {
+    const body = { ok: true, signatures: SIGNATURES_FAILED };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(body));
+    const result = await client.verifySession(SESSION_ID);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/sessions/${SESSION_ID}/verify`);
+    expect(result).toEqual(body);
+  });
+
+  it("throws IronViseApiError on 404", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "not found" }, 404));
+    await expect(client.verifySession("nonexistent")).rejects.toBeInstanceOf(IronViseApiError);
+  });
+});
+
 describe("proveCompliance", () => {
   it("GET /api/sessions/:id/compliance", async () => {
-    const bundle = {
-      session_id: SESSION_ID,
-      events: [{ sequence: 1, payload_hash: "aa" }],
-      policy_hash: null,
-      generated_at: "2026-02-24T00:00:00Z",
-    };
-    fetchSpy.mockResolvedValueOnce(jsonResponse(bundle));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SERVER_COMPLIANCE));
     const result = await client.proveCompliance(SESSION_ID);
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/sessions/${SESSION_ID}/compliance`);
     expect(result.session_id).toBe(SESSION_ID);
+  });
+
+  it("returns the server's bundle as sent: a count and each event's sequence and content hash", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SERVER_COMPLIANCE));
+    const result: ComplianceBundle = await client.proveCompliance(SESSION_ID);
+    expect(result).toEqual(SERVER_COMPLIANCE);
+    expect(result.event_count).toBe(result.events.length);
+    expect(result.events.map((e) => [e.sequence, e.content_hash])).toEqual(
+      SERVER_EVENTS.map((e) => [e.sequence, e.content_hash]),
+    );
+    expect(keysOf(result)).toEqual(keysOf(COMPLIANCE_KEYS));
+    expect(keysOf(result.events[0])).toEqual(keysOf(COMPLIANCE_EVENT_KEYS));
   });
 });
 
@@ -255,13 +361,11 @@ describe("exportCertificate", () => {
     expect(blob).toBeInstanceOf(Blob);
   });
 
-  it("throws EctoLedgerApiError on non-2xx", async () => {
+  it("throws IronViseApiError on non-2xx", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("not found", 404));
-    await expect(client.exportCertificate(SESSION_ID)).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.exportCertificate(SESSION_ID)).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Reports & VCs ────────────────────────────────────────────────────────────
 
 describe("getReport", () => {
   it("GET /api/reports/:id", async () => {
@@ -289,9 +393,15 @@ describe("verifySessionVc", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/sessions/${SESSION_ID}/vc/verify`);
     expect(result["valid"]).toBe(true);
   });
-});
 
-// ── Metrics ──────────────────────────────────────────────────────────────────
+  it("sends ?audience= when given", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ valid: true, vc_payload: {} }));
+    await client.verifySessionVc(SESSION_ID, "https://verifier.example");
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      `${BASE_URL}/api/sessions/${SESSION_ID}/vc/verify?audience=${encodeURIComponent("https://verifier.example")}`,
+    );
+  });
+});
 
 describe("getMetrics", () => {
   it("GET /api/metrics", async () => {
@@ -321,13 +431,11 @@ describe("getPrometheusMetrics", () => {
     expect(raw).toContain("ectoledger_sessions 5");
   });
 
-  it("throws EctoLedgerApiError on non-2xx", async () => {
+  it("throws IronViseApiError on non-2xx", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("forbidden", 403));
-    await expect(client.getPrometheusMetrics()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.getPrometheusMetrics()).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Policies ────────────────────────────────────────────────────────────────
 
 describe("listPolicies", () => {
   it("GET /api/policies", async () => {
@@ -347,9 +455,9 @@ describe("getPolicy", () => {
     expect(content).toContain("soc2-audit");
   });
 
-  it("throws EctoLedgerApiError when policy does not exist", async () => {
+  it("throws IronViseApiError when policy does not exist", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("not found", 404));
-    await expect(client.getPolicy("nonexistent")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.getPolicy("nonexistent")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -364,9 +472,9 @@ describe("savePolicy", () => {
     expect(init.body).toBe("name = \"my-policy\"");
   });
 
-  it("throws EctoLedgerApiError on failure", async () => {
+  it("throws IronViseApiError on failure", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("forbidden", 403));
-    await expect(client.savePolicy("x", "content")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.savePolicy("x", "content")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -379,13 +487,11 @@ describe("deletePolicy", () => {
     expect(init.method).toBe("DELETE");
   });
 
-  it("throws EctoLedgerApiError on 404", async () => {
+  it("throws IronViseApiError on 404", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("not found", 404));
-    await expect(client.deletePolicy("ghost")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.deletePolicy("ghost")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Approval gates ───────────────────────────────────────────────────────────
 
 const SAMPLE_APPROVAL: PendingApproval = {
   gate_id: "gate-001",
@@ -409,9 +515,9 @@ describe("getPendingApproval", () => {
     expect(result).toBeNull();
   });
 
-  it("throws EctoLedgerApiError on 404", async () => {
+  it("throws IronViseApiError on 404", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "not found" }, 404));
-    await expect(client.getPendingApproval(SESSION_ID)).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.getPendingApproval(SESSION_ID)).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -444,27 +550,42 @@ describe("postApprovalDecision", () => {
     expect(body.reason).toBe("Scope too broad");
   });
 
-  it("throws EctoLedgerApiError on non-2xx", async () => {
+  it("throws IronViseApiError on non-2xx", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "gate expired" }, 409));
     await expect(
       client.postApprovalDecision(SESSION_ID, { gate_id: "g", approved: true }),
-    ).rejects.toBeInstanceOf(EctoLedgerApiError);
+    ).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Status ────────────────────────────────────────────────────────────────────
 
 describe("getStatus", () => {
   it("GET /api/status", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ demo_mode: false, version: "0.6.3" }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ demo_mode: false, version: "0.7.2" }));
     const status = await client.getStatus();
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/status`);
-    expect(status.version).toBe("0.6.3");
+    expect(status.version).toBe("0.7.2");
     expect(status.demo_mode).toBe(false);
+    expect(status.ledger_backend).toBeUndefined();
+  });
+
+  it("parses the 0.8.0 capability fields when the server sends them", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        demo_mode: false,
+        version: "0.8.0",
+        ledger_backend: "postgres",
+        agent_supported: true,
+        exports_supported: true,
+        webhooks_live: true,
+      }),
+    );
+    const status = await client.getStatus();
+    expect(status.ledger_backend).toBe("postgres");
+    expect(status.agent_supported).toBe(true);
+    expect(status.exports_supported).toBe(true);
+    expect(status.webhooks_live).toBe(true);
   });
 });
-
-// ── Chat ──────────────────────────────────────────────────────────────────────
 
 describe("chat", () => {
   it("POST /api/sessions/:id/chat with message", async () => {
@@ -482,13 +603,11 @@ describe("chat", () => {
     expect(res.backend).toBe("mock");
   });
 
-  it("throws EctoLedgerApiError on 503", async () => {
+  it("throws IronViseApiError on 503", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "LLM not ready" }, 503));
-    await expect(client.chat(SESSION_ID, "test")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.chat(SESSION_ID, "test")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Config ────────────────────────────────────────────────────────────────────
 
 describe("getConfig", () => {
   it("GET /api/config", async () => {
@@ -503,7 +622,6 @@ describe("getConfig", () => {
       max_steps: 30,
       agent_allowed_domains: ["example.com"],
       sandbox_mode: "none",
-      evm_enabled: false,
       demo_mode: false,
     };
     fetchSpy.mockResolvedValueOnce(jsonResponse(configData));
@@ -513,9 +631,61 @@ describe("getConfig", () => {
     expect(config.max_steps).toBe(30);
   });
 
-  it("throws EctoLedgerApiError on 403", async () => {
+  it("throws IronViseApiError on 403", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "forbidden" }, 403));
-    await expect(client.getConfig()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.getConfig()).rejects.toBeInstanceOf(IronViseApiError);
+  });
+
+  it("parses the 0.8.0 fields when the server sends them", async () => {
+    const configData = {
+      database_url: "sqlite://db.sqlite",
+      llm_backend: "ollama",
+      ollama_base_url: "http://localhost:11434",
+      openai_base_url: "https://api.openai.com/v1",
+      ollama_model: "llama3",
+      guard_required: true,
+      guard_required_source: "environment",
+      guard_llm_backend: null,
+      guard_llm_model: null,
+      max_steps: 30,
+      agent_allowed_domains: [],
+      sandbox_mode: "none",
+      demo_mode: false,
+      show_developer_tools: true,
+      ledger_backend: "sqlite",
+      agent_supported: true,
+      exports_supported: true,
+      webhooks_live: false,
+      active_policy: "soc2-audit",
+      policy_from_environment: null,
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(configData));
+    const config = await client.getConfig();
+    expect(config.guard_required_source).toBe("environment");
+    expect(config.ledger_backend).toBe("sqlite");
+    expect(config.active_policy).toBe("soc2-audit");
+    expect(config.policy_from_environment).toBeNull();
+  });
+
+  it("parses an older server's response with none of the 0.8.0 fields", async () => {
+    const configData = {
+      database_url: "sqlite://db.sqlite",
+      llm_backend: "ollama",
+      ollama_base_url: "http://localhost:11434",
+      ollama_model: "llama3",
+      guard_required: true,
+      guard_llm_backend: null,
+      guard_llm_model: null,
+      max_steps: 30,
+      agent_allowed_domains: [],
+      sandbox_mode: "none",
+      demo_mode: false,
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(configData));
+    const config = await client.getConfig();
+    expect(config.max_steps).toBe(30);
+    expect(config.ledger_backend).toBeUndefined();
+    expect(config.active_policy).toBeUndefined();
   });
 });
 
@@ -532,7 +702,6 @@ describe("updateConfig", () => {
       max_steps: 50,
       agent_allowed_domains: [],
       sandbox_mode: "none",
-      evm_enabled: false,
       demo_mode: false,
     };
     fetchSpy.mockResolvedValueOnce(jsonResponse(updated));
@@ -542,9 +711,38 @@ describe("updateConfig", () => {
     expect(init.method).toBe("PUT");
     expect(res.max_steps).toBe(50);
   });
-});
 
-// ── Admin: Reset Demo ─────────────────────────────────────────────────────────
+  it("sends openai_base_url, show_developer_tools and active_policy", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({}));
+    await client.updateConfig({
+      openai_base_url: "https://api.openai.com/v1",
+      show_developer_tools: true,
+      active_policy: "soc2-audit",
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      openai_base_url: "https://api.openai.com/v1",
+      show_developer_tools: true,
+      active_policy: "soc2-audit",
+    });
+  });
+
+  it("sends active_policy: \"\" to clear it", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ active_policy: null }));
+    await client.updateConfig({ active_policy: "" });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ active_policy: "" });
+  });
+
+  it("throws IronViseApiError with 422 for an active_policy that will not load", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ detail: "The policy chosen for new runs cannot be used: no such policy" }, 422),
+    );
+    const err = await client.updateConfig({ active_policy: "no-such-policy" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IronViseApiError);
+    expect((err as IronViseApiError).status).toBe(422);
+  });
+});
 
 describe("resetDemo", () => {
   it("POST /api/admin/reset-demo", async () => {
@@ -558,13 +756,11 @@ describe("resetDemo", () => {
     expect(res["ok"]).toBe(true);
   });
 
-  it("throws EctoLedgerApiError on 403 when not in demo mode", async () => {
+  it("throws IronViseApiError on 403 when not in demo mode", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "forbidden" }, 403));
-    await expect(client.resetDemo()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.resetDemo()).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Tripwire ──────────────────────────────────────────────────────────────────
 
 const SAMPLE_TRIPWIRE = {
   allowed_paths: ["/tmp", "/var/log"],
@@ -581,6 +777,22 @@ describe("getTripwireConfig", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/tripwire`);
     expect(tw.require_https).toBe(true);
     expect(tw.allowed_paths).toContain("/tmp");
+  });
+
+  it("parses allowed_mcp_tools and saved when the server sends them", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ ...SAMPLE_TRIPWIRE, allowed_mcp_tools: ["fs/read", "web/*"], saved: true }),
+    );
+    const tw = await client.getTripwireConfig();
+    expect(tw.allowed_mcp_tools).toEqual(["fs/read", "web/*"]);
+    expect(tw.saved).toBe(true);
+  });
+
+  it("tolerates an older server that sends neither field", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(SAMPLE_TRIPWIRE));
+    const tw = await client.getTripwireConfig();
+    expect(tw.allowed_mcp_tools).toBeUndefined();
+    expect(tw.saved).toBeUndefined();
   });
 });
 
@@ -599,9 +811,75 @@ describe("updateTripwireConfig", () => {
     expect(init.method).toBe("PUT");
     expect(res.require_https).toBe(false);
   });
+
+  it("sends allowed_mcp_tools when given", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ...SAMPLE_TRIPWIRE, allowed_mcp_tools: ["fs/*"] }));
+    await client.updateTripwireConfig({
+      allowed_paths: ["/tmp"],
+      allowed_domains: [],
+      banned_command_patterns: [],
+      allowed_mcp_tools: ["fs/*"],
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string).allowed_mcp_tools).toEqual(["fs/*"]);
+  });
 });
 
-// ── RBAC Tokens ───────────────────────────────────────────────────────────────
+describe("checkTripwire", () => {
+  it("POST /api/tripwire/check and returns an allowed verdict", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ allowed: true, reason: null, rule: null, matched: null }),
+    );
+    const verdict = await client.checkTripwire({
+      action: "read_file",
+      params: { path: "/tmp/report.txt" },
+      justification: "Checking before the agent reads it.",
+    });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BASE_URL}/api/tripwire/check`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      action: "read_file",
+      params: { path: "/tmp/report.txt" },
+      justification: "Checking before the agent reads it.",
+    });
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.reason).toBeNull();
+  });
+
+  it("POST /api/tripwire/check and returns a refused verdict with rule and matched", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        allowed: false,
+        reason: "path /etc/shadow is not in the allowed paths",
+        rule: "allowed_paths",
+        matched: "/etc/shadow",
+      }),
+    );
+    const verdict = await client.checkTripwire({
+      action: "read_file",
+      params: { path: "/etc/shadow" },
+    });
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.rule).toBe("allowed_paths");
+    expect(verdict.matched).toBe("/etc/shadow");
+    expect(verdict.reason).toContain("/etc/shadow");
+  });
+
+  it("defaults params to {} and omits justification when not given", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ allowed: true, reason: null, rule: null, matched: null }),
+    );
+    await client.checkTripwire({ action: "complete" });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ action: "complete", params: {} });
+  });
+
+  it("throws IronViseApiError on non-2xx", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "bad request" }, 400));
+    await expect(client.checkTripwire({ action: "" })).rejects.toBeInstanceOf(IronViseApiError);
+  });
+});
 
 const SAMPLE_TOKEN_ROW = {
   token_hash: "abc123def456",
@@ -619,9 +897,9 @@ describe("listTokens", () => {
     expect(tokens[0].role).toBe("agent");
   });
 
-  it("throws EctoLedgerApiError on 403 for non-admin", async () => {
+  it("throws IronViseApiError on 403 for non-admin", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "forbidden" }, 403));
-    await expect(client.listTokens()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.listTokens()).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -652,13 +930,11 @@ describe("deleteToken", () => {
     expect(init.method).toBe("DELETE");
   });
 
-  it("throws EctoLedgerApiError on 403", async () => {
+  it("throws IronViseApiError on 403", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "forbidden" }, 403));
-    await expect(client.deleteToken("abc")).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(client.deleteToken("abc")).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
-
-// ── Webhooks ──────────────────────────────────────────────────────────────────
 
 const SAMPLE_WEBHOOK = {
   id: "wh-001",
@@ -695,11 +971,11 @@ describe("createWebhook", () => {
     expect(res.label).toBe("SIEM sink");
   });
 
-  it("throws EctoLedgerApiError on 400 for invalid URL", async () => {
+  it("throws IronViseApiError on 400 for invalid URL", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "invalid url" }, 400));
     await expect(
       client.createWebhook({ label: "x", url: "not-a-url" }),
-    ).rejects.toBeInstanceOf(EctoLedgerApiError);
+    ).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
@@ -730,8 +1006,6 @@ describe("toggleWebhook", () => {
     expect(JSON.parse(init.body as string)).toMatchObject({ enabled: true });
   });
 });
-
-// ── SSE Stream ────────────────────────────────────────────────────────────────
 
 describe("streamEvents", () => {
   it("GET /api/stream and yields parsed events", async () => {
@@ -789,22 +1063,30 @@ describe("streamEvents", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("throws EctoLedgerApiError on non-2xx", async () => {
+  it("throws IronViseApiError on non-2xx", async () => {
     fetchSpy.mockResolvedValueOnce(textResponse("unauthorized", 401));
     const gen = client.streamEvents();
-    await expect(gen.next()).rejects.toBeInstanceOf(EctoLedgerApiError);
+    await expect(gen.next()).rejects.toBeInstanceOf(IronViseApiError);
   });
 });
 
-// ── EctoLedgerApiError ─────────────────────────────────────────────────────────
-
-describe("EctoLedgerApiError", () => {
+describe("IronViseApiError", () => {
   it("exposes .status and .body", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ detail: "internal error" }, 500));
     const err = await client.listSessions().catch((e) => e);
-    expect(err).toBeInstanceOf(EctoLedgerApiError);
-    expect((err as EctoLedgerApiError).status).toBe(500);
-    expect((err as EctoLedgerApiError).body).toContain("internal error");
+    expect(err).toBeInstanceOf(IronViseApiError);
+    expect((err as IronViseApiError).status).toBe(500);
+    expect((err as IronViseApiError).body).toContain("internal error");
+  });
+
+  it("message carries the first 300 characters of a long body; .body is whole", async () => {
+    const body = "x".repeat(1000);
+    fetchSpy.mockResolvedValueOnce(textResponse(body, 500));
+    const err = (await client.listSessions().catch((e) => e)) as IronViseApiError;
+    expect(err.body).toBe(body);
+    expect(err.message).toBe(
+      `IronVise API GET ${BASE_URL}/api/sessions?limit=50 → 500: ${"x".repeat(300)}…`,
+    );
   });
 
   it("message includes method, url, and status", async () => {
@@ -812,5 +1094,65 @@ describe("EctoLedgerApiError", () => {
     const err = await client.appendEvent(SESSION_ID, {}).catch((e) => e);
     expect(err.message).toContain("POST");
     expect(err.message).toContain("400");
+  });
+});
+
+describe("askStream and chatStream", () => {
+  const sseResponse = (body: string) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          // Split mid-event, as the network may.
+          const bytes = new TextEncoder().encode(body);
+          controller.enqueue(bytes.slice(0, 20));
+          controller.enqueue(bytes.slice(20));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+
+  it("POSTs the message and yields deltas, then the recorded reply", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      sseResponse(
+        'event: delta\ndata: {"text":"Hel"}\n\n' +
+          ": keep-alive\n\n" +
+          'event: delta\ndata: {"text":"lo"}\n\n' +
+          'event: done\ndata: {"reply":"Hello","backend":"openai","model":"gpt-6-astra"}\n\n',
+      ),
+    );
+    const events = [];
+    for await (const ev of client.askStream("say hello")) events.push(ev);
+    expect(events).toEqual([
+      { type: "delta", text: "Hel" },
+      { type: "delta", text: "lo" },
+      { type: "done", reply: "Hello", backend: "openai", model: "gpt-6-astra" },
+    ]);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe(`${BASE_URL}/api/chat/stream`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ message: "say hello" });
+  });
+
+  it("throws on an error event after the text so far", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      sseResponse('event: delta\ndata: {"text":"Hel"}\n\nevent: error\ndata: {"message":"LLM call failed: cut off"}\n\n'),
+    );
+    const texts: string[] = [];
+    await expect(async () => {
+      for await (const ev of client.chatStream(SESSION_ID, "hi")) {
+        if (ev.type === "delta") texts.push(ev.text);
+      }
+    }).rejects.toThrow(/cut off/);
+    expect(texts).toEqual(["Hel"]);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/sessions/${SESSION_ID}/chat/stream`);
+  });
+
+  it("ask POSTs /api/chat", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ reply: "hi", backend: "b", model: "m" }), { status: 200 }),
+    );
+    expect(await client.ask("hello")).toEqual({ reply: "hi", backend: "b", model: "m" });
+    expect(fetchSpy.mock.calls[0][0]).toBe(`${BASE_URL}/api/chat`);
   });
 });

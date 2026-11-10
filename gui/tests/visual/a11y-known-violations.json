@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Known colour-contrast failures, pinned so the gate fails on NEW ones.",
+    "This is a record of what the project knows is wrong, not an approval of it.",
+    "Every entry is below WCAG AA 4.5:1 for normal text.",
+    "Primary/success/danger button fills were fixed in the 0.8.0 polish pass",
+    "(dark text on light fills / muted fills with coloured text). Remaining",
+    "entries are greys and reduced-opacity accents used as non-body chrome.",
+    "Remove an entry when the colour is fixed; adding one needs a reason."
+  ],
+  "known": [
+    "#2b5598-on-#12161d",
+    "#555c65-on-#12161d",
+    "#575e68-on-#1a1f26",
+    "#575e68-on-#1d2229",
+    "#97999d-on-#8e3236",
+    "#ef4444-on-#322229"
+  ],
+  "_measured": {
+    "#2b5598-on-#12161d": {
+      "ratio": 2.47,
+      "note": "accent at reduced opacity (disabled control)"
+    },
+    "#555c65-on-#12161d": {
+      "ratio": 2.68,
+      "note": "muted grey on the darkest surface"
+    },
+    "#575e68-on-#1a1f26": {
+      "ratio": 2.53,
+      "note": "muted grey on a dark surface"
+    },
+    "#575e68-on-#1d2229": {
+      "ratio": 2.44,
+      "note": "muted grey on a dark surface"
+    },
+    "#97999d-on-#8e3236": {
+      "ratio": 2.77,
+      "note": "muted text over a danger-tinted background"
+    },
+    "#ef4444-on-#322229": {
+      "ratio": 4.0,
+      "note": "danger red as text"
+    }
+  }
+}

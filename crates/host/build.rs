@@ -1,15 +1,4 @@
 fn main() {
-    // ── SP1 guest ELF compilation (only when the `zk` feature is active) ─────
-    //
-    // When `cargo build --features zk` is invoked, sp1_build compiles the guest RISC-V
-    // program at `crates/guest/` and makes its ELF available to the host via an env var
-    // (`ECTO_GUEST_ELF_PATH`) that is set in the cargo build script output.
-    // The host `prove-audit` command includes this ELF at compile time.
-    #[cfg(feature = "zk")]
-    {
-        sp1_build::build_program("../guest");
-    }
-
     #[cfg(all(
         feature = "sandbox-apple-enclave",
         target_os = "macos",
@@ -19,7 +8,6 @@ fn main() {
         build_guard_unikernel_bin();
     }
 
-    // ── Windows icon embedding (non-ZK-gated) ────────────────────────────────
     // Gated behind the `embed-resource` feature so that downstream consumers
     // (e.g. ectoledger-gui / Tauri) that produce their OWN Windows resource
     // files do not hit CVT1100 "duplicate resource" linker errors.
@@ -53,7 +41,6 @@ fn build_guard_unikernel_bin() {
         link_ld_path.display()
     );
 
-    // ── Pre-flight: verify the bare-metal target is installed ─────────────
     let target_check = Command::new("rustup")
         .args(["target", "list", "--installed"])
         .output()
@@ -84,7 +71,7 @@ fn build_guard_unikernel_bin() {
         .arg(&guard_manifest)
         .arg("--target")
         .arg("aarch64-unknown-none")
-        .arg("--target-dir") // Tell cargo exactly where to put the output
+        .arg("--target-dir")
         .arg(&unikernel_target_dir)
         .env("RUSTFLAGS", &rustflags)
         // Clear CARGO_ENCODED_RUSTFLAGS so the child cargo respects our RUSTFLAGS.
@@ -103,14 +90,12 @@ fn build_guard_unikernel_bin() {
         );
     }
 
-    // Grab the ELF from our isolated target directory
     let elf_path = unikernel_target_dir
         .join("aarch64-unknown-none")
         .join("release")
         .join("guard_unikernel");
     let bin_path = Path::new(&out_dir).join("guard_unikernel.bin");
 
-    // Find llvm-objcopy in the Rust toolchain
     let sysroot = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let sysroot_output = Command::new(&sysroot)
         .arg("--print")
@@ -160,14 +145,14 @@ fn embed_windows_icon() {
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     // The crate lives in `crates/host` whereas the logo lives at the workspace
-    // root (`assets/el-logo.webp`).  On Windows CI we were failing because we tried
-    // to open `crates/host/assets/el-logo.webp` which doesn't exist.  Climb two
+    // root (`assets/ironvise-mark.webp`).  On Windows CI we were failing because we tried
+    // to open `crates/host/assets/ironvise-mark.webp` which doesn't exist.  Climb two
     // levels to reach the workspace root.
     let logo_path = Path::new(&manifest_dir)
         .join("..")
         .join("..")
         .join("assets")
-        .join("el-logo.webp");
+        .join("ironvise-mark.webp");
 
     if !logo_path.exists() {
         eprintln!(
@@ -180,7 +165,7 @@ fn embed_windows_icon() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let ico_path = Path::new(&out_dir).join("icon.ico");
 
-    let img = image::open(&logo_path).expect("failed to open assets/el-logo.webp");
+    let img = image::open(&logo_path).expect("failed to open assets/ironvise-mark.webp");
     let rgba = img.to_rgba8();
     let (w, h) = (rgba.width(), rgba.height());
     let sizes = [256u32, 48, 32, 16];

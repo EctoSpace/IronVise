@@ -1,5 +1,5 @@
 <!--
-  Enterprise Card component — surface container with optional header.
+  Card - surface container with optional header.
   Usage:
     <Card title="Sessions" class="col-span-2">
       ...content...

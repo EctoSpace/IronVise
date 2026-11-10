@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1041,
+    "sequence": 0,
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "content_hash": "13b77bdc3ad7c747fdf210ea105315ea129153f8e0486a5648e866309101642f",
+    "payload": {
+      "type": "genesis",
+      "message": "audit-run-42",
+      "nonce": "2d877c233468d6d531f47cc78825dbcd"
+    },
+    "created_at": "2026-09-29T10:00:00.482913+00:00"
+  },
+  {
+    "id": 1042,
+    "sequence": 1,
+    "previous_hash": "13b77bdc3ad7c747fdf210ea105315ea129153f8e0486a5648e866309101642f",
+    "content_hash": "6050fd586ee4d82a5052df2208167c014b0b88af3a28b7a5a9f5c72dbfa28646",
+    "payload": {
+      "type": "prompt_input",
+      "content": "audit the staging environment"
+    },
+    "created_at": "2026-09-29T10:00:01.104522+00:00"
+  },
+  {
+    "id": 1043,
+    "sequence": 2,
+    "previous_hash": "6050fd586ee4d82a5052df2208167c014b0b88af3a28b7a5a9f5c72dbfa28646",
+    "content_hash": "e5d0ef9440fc258a6f6f9b410555854e1255d38ac5488f7c988b02532a1e987b",
+    "payload": {
+      "type": "observation",
+      "content": "read config: 3 services"
+    },
+    "created_at": "2026-09-29T10:00:02.771034+00:00"
+  }
+]

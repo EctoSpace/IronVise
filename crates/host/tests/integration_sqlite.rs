@@ -1,7 +1,7 @@
-//! CI-friendly integration test suite for EctoLedger.
+//! CI-friendly integration test suite for IronVise.
 //!
 //! Design goals:
-//! - In-memory SQLite backend (`sqlite::memory:`) — no external services.
+//! - In-memory SQLite backend (`sqlite::memory:`) - no external services.
 //! - Full session lifecycle through the `LedgerBackend` trait.
 //! - Cryptographic property verification (hash-chain integrity, Ed25519 signatures).
 //! - Policy engine acceptance/rejection via the native `PolicyEngine`.
@@ -12,14 +12,12 @@
 
 use std::sync::Arc;
 
-use ectoledger::hash::{GENESIS_PREVIOUS_HASH, compute_content_hash};
+use ectoledger::hash::{GENESIS_PREVIOUS_HASH, compute_content_hash_v2};
 use ectoledger::intent::ProposedIntent;
 use ectoledger::ledger::sqlite::SqliteLedger;
 use ectoledger::policy::{AuditPolicy, ObservationOutcome, PolicyEngine};
 use ectoledger::signing;
 use ledger_api::{LedgerBackend, NewSession};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Spin up a fresh in-memory SQLite ledger with all migrations applied.
 async fn ledger() -> Arc<SqliteLedger> {
@@ -60,10 +58,6 @@ fn action(name: &str, params: serde_json::Value) -> serde_json::Value {
 fn observation(content: &str) -> serde_json::Value {
     serde_json::json!({ "type": "observation", "content": content })
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  1. SESSION LIFECYCLE
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod session_lifecycle {
     use super::*;
@@ -122,7 +116,6 @@ mod session_lifecycle {
             .await
             .unwrap();
 
-        // Append genesis
         let g = db
             .append_event(
                 genesis("session start"),
@@ -134,7 +127,6 @@ mod session_lifecycle {
             .unwrap();
         assert_eq!(g.sequence, 0);
 
-        // Append several domain events
         for i in 1..=5 {
             db.append_event(
                 thought(&format!("step {i}")),
@@ -146,13 +138,10 @@ mod session_lifecycle {
             .unwrap();
         }
 
-        // Seal
         db.seal_session(session.id, "completed").await.unwrap();
 
-        // Verify chain covers all events
         assert!(db.verify_chain(0, 5).await.unwrap());
 
-        // Events queryable by session
         let events = db.get_events_by_session(session.id).await.unwrap();
         assert_eq!(events.len(), 6);
     }
@@ -168,10 +157,6 @@ mod session_lifecycle {
         assert_eq!(sessions[0].status, "failed");
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  2. HASH-CHAIN INTEGRITY
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod hash_chain {
     use super::*;
@@ -228,14 +213,75 @@ mod hash_chain {
         // the backend actually stores.
         let typed: EventPayload = serde_json::from_value(payload).unwrap();
         let payload_json = serde_json::to_string(&typed).unwrap();
-        let expected = compute_content_hash(
+        let expected = compute_content_hash_v2(
             GENESIS_PREVIOUS_HASH,
             0,
             &payload_json,
             None,
-            Some(&ev.created_at.to_rfc3339()),
+            &ev.created_at.to_rfc3339(),
         );
         assert_eq!(ev.content_hash, expected);
+    }
+
+    /// The canonical (v2) hash must be identical across the three code paths
+    /// that compute or verify it: the SQLite backend, the Postgres backend
+    /// formula, and the SP1 guest's multi-scheme verifier. All three receive
+    /// the same (previous_hash, sequence, payload, session_id, created_at)
+    /// and must agree on the tip hash.
+    #[tokio::test]
+    async fn content_hash_identical_across_backends_and_guest() {
+        use ectoledger::hash::{HashScheme, verify_content_hash_any_scheme};
+        use ectoledger::schema::EventPayload;
+
+        let db = ledger().await;
+        let (session, _key) = db
+            .create_session(new_session("cross-backend hash check"))
+            .await
+            .unwrap();
+
+        // Path 1: SQLite backend computes and stores the hash at append time.
+        let payload = thought("canonical");
+        let ev = db
+            .append_event(payload.clone(), Some(session.id), None, None)
+            .await
+            .unwrap();
+
+        let typed: EventPayload = serde_json::from_value(payload).unwrap();
+        let payload_json = serde_json::to_string(&typed).unwrap();
+        let sid = session.id.to_string();
+        let ts = ev.created_at.to_rfc3339();
+
+        // Path 2: the Postgres backend's append formula -
+        // compute_content_hash_v2 over the identical five inputs (see
+        // crates/host/src/ledger/postgres.rs append_event).
+        let pg_formula = compute_content_hash_v2(
+            &ev.previous_hash,
+            ev.sequence,
+            &payload_json,
+            Some(&sid),
+            &ts,
+        );
+        assert_eq!(
+            ev.content_hash, pg_formula,
+            "SQLite-stored hash and Postgres formula must agree"
+        );
+
+        // Path 3: the SP1 guest's verifier (crates/guest/src/main.rs) - the
+        // same multi-scheme check over the same ChainEvent fields must
+        // identify the stored hash as canonical v2.
+        let guest_scheme = verify_content_hash_any_scheme(
+            &ev.previous_hash,
+            ev.sequence,
+            &payload_json,
+            Some(&sid),
+            Some(&ts),
+            &ev.content_hash,
+        );
+        assert_eq!(
+            guest_scheme,
+            Some(HashScheme::V2),
+            "guest verifier must reproduce the stored tip hash as canonical v2"
+        );
     }
 
     /// verify_chain returns true for a valid 10-event chain.
@@ -297,10 +343,6 @@ mod hash_chain {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  3. ED25519 SIGNATURE VERIFICATION
-// ═══════════════════════════════════════════════════════════════════════════════
-
 mod signatures {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey, Verifier};
@@ -315,7 +357,6 @@ mod signatures {
         let sig_hex = signing::sign_content_hash(&sk, content_hash);
         let pk_hex = signing::public_key_hex(&vk);
 
-        // Verify using the public API
         signing::verify_signature(&pk_hex, content_hash, &sig_hex)
             .expect("signature should be valid");
     }
@@ -370,12 +411,10 @@ mod signatures {
             .await
             .unwrap();
 
-        // Reconstruct signing key from seed
         let arr: [u8; 32] = key_bytes.as_slice().try_into().unwrap();
         let sk = SigningKey::from_bytes(&arr);
         let vk = sk.verifying_key();
 
-        // The content_hash should be verifiable with the session key
         let sig_hex = signing::sign_content_hash(&sk, &ev.content_hash);
         let pk_hex = signing::public_key_hex(&vk);
         signing::verify_signature(&pk_hex, &ev.content_hash, &sig_hex)
@@ -418,7 +457,6 @@ mod signatures {
         let events = db.get_events_by_session(session.id).await.unwrap();
         assert_eq!(events.len(), 5);
 
-        // Verify chain is intact
         assert!(db.verify_chain(0, 4).await.unwrap());
     }
 
@@ -426,7 +464,7 @@ mod signatures {
     /// to confirm the signing module's output is standard-compliant.
     #[tokio::test]
     async fn ed25519_raw_round_trip() {
-        let sk = SigningKey::generate(&mut rand::rngs::OsRng);
+        let sk = SigningKey::generate(&mut ectoledger::signing::os_rng());
         let vk = sk.verifying_key();
         let message = b"content_hash_value_here";
         let sig = sk.sign(message);
@@ -434,20 +472,14 @@ mod signatures {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  4. POLICY ENGINE — ACCEPTANCE / REJECTION
-// ═══════════════════════════════════════════════════════════════════════════════
-
 mod policy_engine {
     use super::*;
 
-    /// Helper: build a minimal policy from TOML.
     fn engine_from_toml(toml_str: &str) -> PolicyEngine {
         let policy: AuditPolicy = toml::from_str(toml_str).expect("parse test policy TOML");
         PolicyEngine::new(policy).expect("build PolicyEngine")
     }
 
-    /// Helper: create a `ProposedIntent` for a given action name.
     fn intent(action: &str, params: serde_json::Value) -> ProposedIntent {
         ProposedIntent {
             action: action.to_string(),
@@ -456,8 +488,6 @@ mod policy_engine {
             reasoning: "test reasoning".into(),
         }
     }
-
-    // ── Allowed / forbidden actions ────────────────────────────────────────
 
     /// An action in `allowed_actions` passes validation.
     #[test]
@@ -498,8 +528,6 @@ mod policy_engine {
         assert!(engine.validate_intent(&i, 0).is_err());
     }
 
-    // ── Max steps enforcement ──────────────────────────────────────────────
-
     /// Step count under max_steps passes.
     #[test]
     fn step_under_max_passes() {
@@ -523,8 +551,6 @@ mod policy_engine {
         let i = intent("read_file", serde_json::json!({}));
         assert!(engine.validate_intent(&i, 99).is_err());
     }
-
-    // ── Command rules ──────────────────────────────────────────────────────
 
     /// An explicit `allow` command rule passes validation.
     #[test]
@@ -563,8 +589,7 @@ mod policy_engine {
         let err = engine.validate_intent(&i, 0).unwrap_err();
         assert!(
             err.to_string().contains("curl is forbidden"),
-            "error should contain deny reason: {}",
-            err
+            "error should contain deny reason: {err}"
         );
     }
 
@@ -584,22 +609,18 @@ mod policy_engine {
             decision = "deny"
             "#,
         );
-        // Safe URL → allow
         let safe = intent(
             "run_command",
             serde_json::json!({ "command": "curl https://safe.example.com/api" }),
         );
         assert!(engine.validate_intent(&safe, 0).is_ok());
 
-        // Other URL → deny
         let bad = intent(
             "run_command",
             serde_json::json!({ "command": "curl https://evil.example.com" }),
         );
         assert!(engine.validate_intent(&bad, 0).is_err());
     }
-
-    // ── Observation rules ──────────────────────────────────────────────────
 
     /// Redact rule replaces matched content.
     #[test]
@@ -640,7 +661,7 @@ mod policy_engine {
             "#,
         );
         match engine.validate_observation("Found SUSPICIOUS activity") {
-            ObservationOutcome::Flagged(labels) => assert!(labels.contains("sus")),
+            ObservationOutcome::Flagged { labels, .. } => assert!(labels.contains("sus")),
             other => panic!("expected Flagged, got {other:?}"),
         }
     }
@@ -657,7 +678,7 @@ mod policy_engine {
             "#,
         );
         match engine.validate_observation("Detected CRITICAL_EXPLOIT in response") {
-            ObservationOutcome::Abort(_) => {} // expected
+            ObservationOutcome::Abort { .. } => {} // expected
             other => panic!("expected Abort, got {other:?}"),
         }
     }
@@ -678,8 +699,6 @@ mod policy_engine {
             ObservationOutcome::Clean,
         );
     }
-
-    // ── Path pattern scoping ───────────────────────────────────────────────
 
     /// Allowed action with path_pattern scoping: matching path passes.
     #[test]
@@ -729,8 +748,6 @@ mod policy_engine {
         assert!(engine.validate_intent(&i, 0).is_err());
     }
 
-    // ── Allowed commands scoping ───────────────────────────────────────────
-
     /// Allowed action with `allowed_commands` passes for listed commands.
     #[test]
     fn allowed_commands_pass() {
@@ -759,8 +776,6 @@ mod policy_engine {
         assert!(engine.validate_intent(&i, 0).is_err());
     }
 
-    // ── Empty / no-restriction policy ──────────────────────────────────────
-
     /// A completely empty policy (no rules) allows all actions.
     #[test]
     fn empty_policy_allows_everything() {
@@ -768,8 +783,6 @@ mod policy_engine {
         let i = intent("anything", serde_json::json!({}));
         assert!(engine.validate_intent(&i, 0).is_ok());
     }
-
-    // ── Invalid regex detection ────────────────────────────────────────────
 
     /// An invalid regex in command_rules causes PolicyEngine::new to fail.
     #[test]
@@ -783,8 +796,6 @@ mod policy_engine {
         let policy: AuditPolicy = toml::from_str(bad_toml).unwrap();
         assert!(PolicyEngine::new(policy).is_err());
     }
-
-    // ── Plugin definitions ─────────────────────────────────────────────────
 
     /// Plugin arg_patterns that don't match are rejected.
     #[test]
@@ -841,10 +852,6 @@ mod policy_engine {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  5. GOAL-HASH MISMATCH (PROMPT-INJECTION DETECTION)
-// ═══════════════════════════════════════════════════════════════════════════════
-
 mod goal_hash {
     use super::*;
 
@@ -893,10 +900,6 @@ mod goal_hash {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  6. COMPLIANCE PROOF
-// ═══════════════════════════════════════════════════════════════════════════════
-
 mod compliance {
     use super::*;
 
@@ -928,17 +931,12 @@ mod compliance {
         assert_eq!(proof["event_count"], 3);
         let events = proof["events"].as_array().unwrap();
         assert_eq!(events.len(), 3);
-        // Each event entry has sequence and content_hash
         for ev in events {
             assert!(ev.get("sequence").is_some());
             assert!(ev.get("content_hash").is_some());
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  7. EDGE CASES & ROBUSTNESS
-// ═══════════════════════════════════════════════════════════════════════════════
 
 mod edge_cases {
     use super::*;
@@ -970,7 +968,6 @@ mod edge_cases {
             .await
             .unwrap();
 
-        // Global chain links together
         assert_eq!(ev0.sequence, 0);
         assert_eq!(ev1.sequence, 1);
         assert_eq!(ev1.previous_hash, ev0.content_hash);
@@ -1080,7 +1077,7 @@ mod edge_cases {
     async fn invalid_signing_key_size_rejected() {
         let db = ledger().await;
         let (session, _key) = db.create_session(new_session("bad key")).await.unwrap();
-        let bad_key = vec![0u8; 16]; // 16 bytes instead of 32
+        let bad_key = vec![0u8; 16]; // below the 32-byte Ed25519 seed length
 
         let result = db
             .append_event(
